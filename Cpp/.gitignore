@@ -1,0 +1,34 @@
+# 编译生成
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.dylib
+*.exe
+*.out
+
+# 调试信息
+*.dSYM/
+*.pdb
+
+
+# 临时文件
+*.log
+*.tmp
+*.swp
+*~
+
+# VS Code
+.vscode/
+
+# CLion
+.idea/
+
+# macOS
+.DS_Store
+
+# 数据文件（例如模拟输出）
+*.bin
+*.dat
+*.h5

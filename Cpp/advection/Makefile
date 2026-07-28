@@ -19,10 +19,10 @@ CXXFLAGS := -std=c++20 -O3 -Wall -Wextra \
 LDFLAGS := -L$(LIBOMP_PATH)/lib -lomp
 
 # 目标可执行文件名
-TARGET := diffusion_sim
+TARGET := a.out
 
 # 自动查找所有 .cpp 源文件
-SRCS := main.cpp CR_transport.cpp
+SRCS := main.cpp CR_advection.cpp
 OBJS := $(SRCS:.cpp=.o)
 DEPS := $(wildcard *.hpp)
 
