@@ -7,24 +7,24 @@
 int main() {
     // omp_set_num_threads(10);
 
-    initialize_grids_log();
+    initialize_grids_log_inv();
 
-    Field2D ndis_C;
-    Field2D ndis_B;
-    Field2D ndis_H;
-    Field2D vR;
-    Field2D vZ;
-    constexpr std::array<double, 2> E = {1, 5};
-    initialize_H(ndis_H, 0.001);
-    initialize_wind_velocity(vR, vZ); 
+    // Field2D ndis_C;
+    // Field2D ndis_B;
+    // Field2D ndis_H;
+    // Field2D vR;
+    // Field2D vZ;
+    // constexpr std::array<double, 2> E = {1, 5};
+    // initialize_H(ndis_H, 0.001);
+    // initialize_wind_velocity(vR, vZ); 
     // write_array_to_bin("vR.bin", vR, (NR + 4) * (NZ + 4));
     // write_array_to_bin("vZ.bin", vZ, (NR + 4) * (NZ + 4));
 
-    double Rg = 1.0; // rigidity GV
-    double D = 3.3e-8; // diffusion coefficient in kpc^2/yr
-    initialize_disk_source(ndis_C);
+    // double Rg = 1.0; // rigidity GV
+    // double D = 3.3e-8; // diffusion coefficient in kpc^2/yr
+    // initialize_disk_source(ndis_C);
 
-    solve_advection_equation(ndis_C, ndis_B, ndis_H, vR, vZ);
+    // solve_advection_equation(ndis_C, ndis_B, ndis_H, vR, vZ);
     // write_array_to_bin("ndis_C_linear.bin", ndis_C, (NR + 4) * (NZ + 4));
     // write_array_to_bin("ndis_B_1GeV_vbreeze1000.bin", ndis_B, (NR + 4) * (NZ + 4));    
 

@@ -5,10 +5,10 @@
 #include <iostream>
 #include <span>
 // 常量声明放头文件，方便main.cpp和diffusion.cpp共享
-constexpr int NR = 300;
-constexpr int NZ = 150;
-constexpr int NT = 1000000;
-constexpr double DT = 100.0;
+constexpr int NR = 257;
+constexpr int NZ = 369;
+constexpr int NT = 10000;
+constexpr double DT = 10000.0;
 class Field2D
 {
 public:
@@ -55,20 +55,23 @@ public:
 // 只写函数原型（声明），不写函数体
 void initialize_grids_linear(void);
 void initialize_grids_log(void);
+void initialize_grids_log_inv(void);
+
 void initialize_disk_source(Field2D& ndis);
 void initialize_wind_velocity(Field2D& vR, Field2D& vZ);
 void initialize_H(Field2D& ndis_H, const double nH);
 void apply_boundary_conditions(Field2D& ndis);
 void write_array_to_bin(const std::string& filename, Field2D& arr, const std::size_t size);
 
-void advection_TVD_R(Field2D& ndis, Field2D& temp, Field2D& vR, double dT);
-
-void advection_TVD_Z(Field2D& ndis, Field2D& temp, Field2D& vZ, double dT);
-
 inline void Van_leer_limiter(double& phi, double ratio);
 
-void advection_TVD_solution(Field2D& ndis, Field2D& temp, Field2D& vR, Field2D& vZ, double dT);
+void advection_TVD(Field2D& ndis, Field2D& temp, Field2D& vR, Field2D& vZ, double dT);
+
+
+inline double minmod(double a,double b);
+
+inline double MC_limiter(double sL,double sC,double sR);
+
+void advection_PLM(Field2D& ndis, Field2D& temp, Field2D& vR, Field2D& vZ, double dT);
 
 void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_B, Field2D& ndis_H, Field2D& vR, Field2D& vZ);
-
-
