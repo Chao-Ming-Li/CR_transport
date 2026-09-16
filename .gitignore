@@ -12,6 +12,7 @@ __pycache__/
 *.bin
 *.out
 *.o
+*.mp4
 
 # macOS 文件
 .DS_Store
