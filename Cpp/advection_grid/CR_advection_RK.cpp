@@ -9,7 +9,7 @@
 
 namespace {
 void validate_legacy_field(const Field2D& field, const Grid2D& grid,
-                         Field2D::Location location = Field2D::Location::Center)
+                         Field2D::Location location = Field2D::Location::Centroid)
 {
     if (!field.matches(grid, location)) {
         throw std::invalid_argument("Field dimensions and location must match the grid");

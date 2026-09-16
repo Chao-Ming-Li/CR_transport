@@ -69,7 +69,7 @@
 
 namespace {
 void validate_legacy_field(const Field2D& field, const Grid2D& grid,
-                         Field2D::Location location = Field2D::Location::Center)
+                         Field2D::Location location = Field2D::Location::Centroid)
 {
     if (!field.matches(grid, location)) {
         throw std::invalid_argument("Field dimensions and location must match the grid");
@@ -141,7 +141,7 @@ void advection_TVD(Field2D& ndis, Field2D& temp, Field2D& vR, Field2D& vZ, doubl
     // CFL condition check, start from 1 because velocity is defined at faces, vR(0,j) = 0, vZ(i,0) = 0, so the first cell is not used for CFL check  
     for (int i = 1; i < grid.nR(); i++) {
         for (int j = 1; j < grid.nz(); j++) {
-            double dt_R = grid.R().center_distance(i) / (fabs(vR(i, j)) + 1e-12);
+            double dt_R = grid.radial_centroid_distance(i) / (fabs(vR(i, j)) + 1e-12);
             double dt_Z = grid.z().center_distance(j) / (fabs(vZ(i, j)) + 1e-12);
             double dt_min = std::min(dt_R, dt_Z);
             if (dT > dt_min) {
@@ -160,27 +160,27 @@ void advection_TVD(Field2D& ndis, Field2D& temp, Field2D& vR, Field2D& vZ, doubl
             // ----- i+1/2 -----
 
             if (vR(i+1, j) >= 0.0) {
-                double ratio_ip_R = (ndis(i,j) - ndis(i-1,j)) / grid.R().center_distance(i - 1) / (ndis(i+1,j) - ndis(i,j) + 1e-12) * grid.R().center_distance(i); 
+                double ratio_ip_R = (ndis(i,j) - ndis(i-1,j)) / grid.radial_centroid_distance(i - 1) / (ndis(i+1,j) - ndis(i,j) + 1e-12) * grid.radial_centroid_distance(i); 
                 Van_leer_limiter(phi_R, ratio_ip_R);
-                n_ip_R = ndis(i,j) + 0.5 * phi_R * (ndis(i+1,j) - ndis(i,j)) * grid.R().width(i) / grid.R().center_distance(i); 
+                n_ip_R = ndis(i,j) + phi_R * (ndis(i+1,j) - ndis(i,j)) / grid.radial_centroid_distance(i) * (grid.R().face(i + 1) - grid.radial_centroid(i)); 
             }
             else {
-                double ratio_ip_R = (ndis(i+2,j) - ndis(i+1,j)) / grid.R().center_distance(i + 1) / (ndis(i+1,j) - ndis(i,j) + 1e-12) * grid.R().center_distance(i); 
+                double ratio_ip_R = (ndis(i+2,j) - ndis(i+1,j)) / grid.radial_centroid_distance(i + 1) / (ndis(i+1,j) - ndis(i,j) + 1e-12) * grid.radial_centroid_distance(i); 
                 Van_leer_limiter(phi_R, ratio_ip_R);
-                n_ip_R = ndis(i+1,j) - 0.5 * phi_R * ( ndis(i+1,j) - ndis(i,j)) * grid.R().width(i + 1) / grid.R().center_distance(i);
+                n_ip_R = ndis(i+1,j) - phi_R * ( ndis(i+1,j) - ndis(i,j)) / grid.radial_centroid_distance(i) * (grid.radial_centroid(i + 1) - grid.R().face(i + 1));
             }
             flux_ip_R = grid.R().face(i + 1) * vR(i+1, j) * n_ip_R;
             
             // ----- i-1/2 -----
             if (vR(i,j) >= 0.0) {
-                double ratio_im_R = (ndis(i-1,j) - ndis(i-2,j)) / grid.R().center_distance(i - 2) / (ndis(i,j) - ndis(i-1,j) + 1e-12) * grid.R().center_distance(i - 1); 
+                double ratio_im_R = (ndis(i-1,j) - ndis(i-2,j)) / grid.radial_centroid_distance(i - 2) / (ndis(i,j) - ndis(i-1,j) + 1e-12) * grid.radial_centroid_distance(i - 1); 
                 Van_leer_limiter(phi_R, ratio_im_R);
-                n_im_R = ndis(i-1,j) + 0.5 * phi_R * (ndis(i,j) - ndis(i-1,j)) / grid.R().center_distance(i - 1) * grid.R().width(i - 1);
+                n_im_R = ndis(i-1,j) + phi_R * (ndis(i,j) - ndis(i-1,j)) / grid.radial_centroid_distance(i - 1) * (grid.R().face(i) - grid.radial_centroid(i - 1));
             }
             else {
-                double ratio_im_R = (ndis(i+1,j) - ndis(i,j)) / grid.R().center_distance(i) / (ndis(i,j) - ndis(i-1,j) + 1e-12) * grid.R().center_distance(i - 1); 
+                double ratio_im_R = (ndis(i+1,j) - ndis(i,j)) / grid.radial_centroid_distance(i) / (ndis(i,j) - ndis(i-1,j) + 1e-12) * grid.radial_centroid_distance(i - 1); 
                 Van_leer_limiter(phi_R, ratio_im_R);
-                n_im_R = ndis(i,j) - 0.5 * phi_R * (ndis(i,j) - ndis(i-1,j)) / grid.R().center_distance(i - 1) * grid.R().width(i);
+                n_im_R = ndis(i,j) - phi_R * (ndis(i,j) - ndis(i-1,j)) / grid.radial_centroid_distance(i - 1) * (grid.radial_centroid(i) - grid.R().face(i));
             }
             flux_im_R = grid.R().face(i) * vR(i,j) * n_im_R;
 
@@ -245,27 +245,27 @@ void advection_TVD_R(Field2D& ndis, Field2D& temp, Field2D& vR, double dT, const
             // ----- i+1/2 -----
 
             if (vR(i+1, j) >= 0.0) {
-                double ratio_ip_R = (ndis(i,j) - ndis(i-1,j)) / grid.R().center_distance(i - 1) / (ndis(i+1,j) - ndis(i,j) + 1e-12) * grid.R().center_distance(i); 
+                double ratio_ip_R = (ndis(i,j) - ndis(i-1,j)) / grid.radial_centroid_distance(i - 1) / (ndis(i+1,j) - ndis(i,j) + 1e-12) * grid.radial_centroid_distance(i); 
                 Van_leer_limiter(phi_R, ratio_ip_R);
-                n_ip_R = ndis(i,j) + 0.5 * phi_R * (ndis(i+1,j) - ndis(i,j)) * grid.R().width(i) / grid.R().center_distance(i); 
+                n_ip_R = ndis(i,j) + phi_R * (ndis(i+1,j) - ndis(i,j)) / grid.radial_centroid_distance(i) * (grid.R().face(i + 1) - grid.radial_centroid(i)); 
             }
             else {
-                double ratio_ip_R = (ndis(i+2,j) - ndis(i+1,j)) / grid.R().center_distance(i + 1) / (ndis(i+1,j) - ndis(i,j) + 1e-12) * grid.R().center_distance(i); 
+                double ratio_ip_R = (ndis(i+2,j) - ndis(i+1,j)) / grid.radial_centroid_distance(i + 1) / (ndis(i+1,j) - ndis(i,j) + 1e-12) * grid.radial_centroid_distance(i); 
                 Van_leer_limiter(phi_R, ratio_ip_R);
-                n_ip_R = ndis(i+1,j) - 0.5 * phi_R * ( ndis(i+1,j) - ndis(i,j)) * grid.R().width(i + 1) / grid.R().center_distance(i);
+                n_ip_R = ndis(i+1,j) - phi_R * ( ndis(i+1,j) - ndis(i,j)) / grid.radial_centroid_distance(i) * (grid.radial_centroid(i + 1) - grid.R().face(i + 1));
             }
             flux_ip_R = grid.R().face(i + 1) * vR(i+1, j) * n_ip_R;
             
             // ----- i-1/2 -----
             if (vR(i,j) >= 0.0) {
-                double ratio_im_R = (ndis(i-1,j) - ndis(i-2,j)) / grid.R().center_distance(i - 2) / (ndis(i,j) - ndis(i-1,j) + 1e-12) * grid.R().center_distance(i - 1); 
+                double ratio_im_R = (ndis(i-1,j) - ndis(i-2,j)) / grid.radial_centroid_distance(i - 2) / (ndis(i,j) - ndis(i-1,j) + 1e-12) * grid.radial_centroid_distance(i - 1); 
                 Van_leer_limiter(phi_R, ratio_im_R);
-                n_im_R = ndis(i-1,j) + 0.5 * phi_R * (ndis(i,j) - ndis(i-1,j)) / grid.R().center_distance(i - 1) * grid.R().width(i - 1);
+                n_im_R = ndis(i-1,j) + phi_R * (ndis(i,j) - ndis(i-1,j)) / grid.radial_centroid_distance(i - 1) * (grid.R().face(i) - grid.radial_centroid(i - 1));
             }
             else {
-                double ratio_im_R = (ndis(i+1,j) - ndis(i,j)) / grid.R().center_distance(i) / (ndis(i,j) - ndis(i-1,j) + 1e-12) * grid.R().center_distance(i - 1); 
+                double ratio_im_R = (ndis(i+1,j) - ndis(i,j)) / grid.radial_centroid_distance(i) / (ndis(i,j) - ndis(i-1,j) + 1e-12) * grid.radial_centroid_distance(i - 1); 
                 Van_leer_limiter(phi_R, ratio_im_R);
-                n_im_R = ndis(i,j) - 0.5 * phi_R * (ndis(i,j) - ndis(i-1,j)) / grid.R().center_distance(i - 1) * grid.R().width(i);
+                n_im_R = ndis(i,j) - phi_R * (ndis(i,j) - ndis(i-1,j)) / grid.radial_centroid_distance(i - 1) * (grid.radial_centroid(i) - grid.R().face(i));
             }
             flux_im_R = grid.R().face(i) * vR(i,j) * n_im_R;
 
@@ -356,26 +356,26 @@ void advection_TVD_Z(Field2D& ndis, Field2D& temp, Field2D& vZ, double dT, const
 //     for (int i = 0; i < grid.nR() + 1; i++) {
 //         for (int j = 0; j < grid.nz() + 1; j++) {
 //             if (vR(i, j) >= 0.0){
-//                 double sF_L = (ndis(i - 1, j) - ndis(i - 2, j)) / grid.R().center_distance(i - 2);
-//                 double sF_R = (ndis(i, j) - ndis(i - 1, j)) / grid.R().center_distance(i - 1);
-//                 double sC = (ndis(i, j) - ndis(i - 2, j)) / (grid.R().center_distance(i - 1) + grid.R().center_distance(i - 2));
+//                 double sF_L = (ndis(i - 1, j) - ndis(i - 2, j)) / grid.radial_centroid_distance(i - 2);
+//                 double sF_R = (ndis(i, j) - ndis(i - 1, j)) / grid.radial_centroid_distance(i - 1);
+//                 double sC = (ndis(i, j) - ndis(i - 2, j)) / (grid.radial_centroid_distance(i - 1) + grid.radial_centroid_distance(i - 2));
 //                 double slope = MC_limiter(sF_L, sC, sF_R);
-//                 double ndis_face = ndis(i - 1, j) + slope * (grid.R().face(i) - grid.R().center(i - 1)); // reconstruct left state at face i
+//                 double ndis_face = ndis(i - 1, j) + slope * (grid.R().face(i) - grid.radial_centroid(i - 1)); // reconstruct left state at face i
 //                 flux_R(i, j) = grid.R().face(i) * vR(i, j) * ndis_face;
 //             }
 //             else{
-//                 double sF_L = (ndis(i, j) - ndis(i - 1, j)) / grid.R().center_distance(i - 1);
-//                 double sF_R = (ndis(i + 1, j) - ndis(i, j)) / grid.R().center_distance(i);
-//                 double sC = (ndis(i + 1, j) - ndis(i - 1, j)) / (grid.R().center_distance(i - 1) + grid.R().center_distance(i));
+//                 double sF_L = (ndis(i, j) - ndis(i - 1, j)) / grid.radial_centroid_distance(i - 1);
+//                 double sF_R = (ndis(i + 1, j) - ndis(i, j)) / grid.radial_centroid_distance(i);
+//                 double sC = (ndis(i + 1, j) - ndis(i - 1, j)) / (grid.radial_centroid_distance(i - 1) + grid.radial_centroid_distance(i));
 //                 double slope = MC_limiter(sF_L, sC, sF_R);
-//                 double ndis_face = ndis(i, j) - slope * (grid.R().center(i) - grid.R().face(i)); // reconstruct right state at face i
+//                 double ndis_face = ndis(i, j) - slope * (grid.radial_centroid(i) - grid.R().face(i)); // reconstruct right state at face i
 //                 flux_R(i, j) = grid.R().face(i) * vR(i, j) * ndis_face;
 //             }
 //         }
 //     }
 //     for (int i = 0; i < grid.nR(); i++) {
 //         for (int j = 0; j < grid.nz(); j++) {
-//             temp(i, j) = ndis(i, j) - dT * (flux_R(i + 1, j) - flux_R(i, j)) / grid.R().width(i) / grid.R().center(i);
+//             temp(i, j) = ndis(i, j) - dT * (flux_R(i + 1, j) - flux_R(i, j)) / grid.R().width(i) / grid.radial_centroid(i);
 //         }
 //     }
 //     apply_boundary_conditions(temp, grid);
@@ -437,7 +437,7 @@ void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_H, Field2D& vR, Fie
         }
     }
     
-    write_array_to_bin("ndis_C_t_ssad_1.bin", ndis_C, ndis_C.data.size());
+    write_array_to_bin("ndis_C_t_ssad_centroid.bin", ndis_C, ndis_C.data.size());
 
 }
 

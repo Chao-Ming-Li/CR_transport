@@ -135,6 +135,39 @@ void test_invalid_inputs()
     }, "Accepted negative physical radius");
 }
 
+void test_cached_centroid_ghosts()
+{
+    for (const auto& axis : {AxisGrid::linear(2, 0., 2.),
+                             AxisGrid::geometric(8, 0., 4., 1.4),
+                             AxisGrid::geometric(8, 0., 4., 0.7),
+                             AxisGrid::from_faces({0.5, 1.5, 3.5})}) {
+        const Grid2D grid(axis, AxisGrid::linear(3, -1.5, 1.5));
+        const int n = grid.nR(), ng = AxisGrid::NG;
+        for (int i = 0; i < n; ++i) {
+            const double a = axis.face(i), b = axis.face(i + 1);
+            near(grid.radial_centroid(i), (2. / 3.) * (a*a + a*b + b*b) / (a+b),
+                 "Physical cylindrical centroid");
+        }
+        for (int g = 1; g <= ng; ++g) {
+            near(grid.radial_centroid(-g) + grid.radial_centroid(g - 1),
+                 2. * axis.face(0), "Lower centroid reflection");
+            near(grid.radial_centroid(n + g - 1) + grid.radial_centroid(n - g),
+                 2. * axis.face(n), "Upper centroid reflection");
+        }
+        for (int i = -ng; i < n + ng; ++i) {
+            check(grid.radial_centroid(i) > axis.face(i) &&
+                  grid.radial_centroid(i) < axis.face(i + 1), "Centroid outside cell");
+            if (i < n + ng - 1) {
+                check(grid.radial_centroid_distance(i) > 0., "Nonpositive centroid spacing");
+                near(grid.radial_centroid_distance(i),
+                     grid.radial_centroid(i + 1) - grid.radial_centroid(i),
+                     "Cached centroid distance");
+            }
+        }
+        near(grid.z().center(1), 0., "Vertical midpoint unchanged");
+    }
+}
+
 } // namespace
 
 int main()
@@ -148,6 +181,8 @@ int main()
         std::cout << "PASS: custom grid and ghost cells\n";
         test_cylindrical_geometry();
         std::cout << "PASS: cylindrical volumes and areas\n";
+        test_cached_centroid_ghosts();
+        std::cout << "PASS: cached centroids including ghosts\n";
         test_invalid_inputs();
         std::cout << "PASS: invalid inputs rejected\n";
     } catch (const std::exception& error) {

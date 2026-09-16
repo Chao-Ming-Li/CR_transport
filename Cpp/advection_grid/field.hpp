@@ -58,15 +58,27 @@ class Grid2D {
         double radial_face_area(int i, int j) const;
         double vertical_face_area(int i) const;
 
+        // Cached cylindrical volume centroids in physical cells; ghost coordinates
+        // reflect physical centroids across the boundary faces.
+        // Valid indices: -AxisGrid::NG <= i < nR() + AxisGrid::NG.
+        double radial_centroid(int i) const;
+        // centroid(i + 1) - centroid(i), including ghosts.
+        // Valid indices: -AxisGrid::NG <= i < nR() + AxisGrid::NG - 1.
+        double radial_centroid_distance(int i) const;
+
+
     private:
         AxisGrid radial_;
         AxisGrid vertical_;
+        std::vector<double> radial_centroid_;
+        std::vector<double> radial_centroid_distance_;
+
 };
 
 class Field2D
 {
 public:
-    enum class Location { Center, RadialFace, VerticalFace };
+    enum class Location { Centroid, RadialFace, VerticalFace };
 
 private:
     Location location_;
@@ -85,11 +97,11 @@ public:
     static constexpr int NG = AxisGrid::NG;
     std::vector<double> data;
 
-    explicit Field2D(const Grid2D& grid, Location location = Location::Center)
+    explicit Field2D(const Grid2D& grid, Location location = Location::Centroid)
         : Field2D(grid.nR(), grid.nz(), location) {}
 
     // Arguments are grid CELL counts; stored dimensions count physical values.
-    Field2D(int nR, int nz, Location location = Location::Center)
+    Field2D(int nR, int nz, Location location = Location::Centroid)
         : location_(location), nR_(nR), nz_(nz)
     {
         if (nR < NG || nz < NG) {

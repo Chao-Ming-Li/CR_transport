@@ -157,7 +157,6 @@ AxisGrid::AxisGrid(std::vector<double> physical_faces)
         if (!std::isfinite(distance) || distance <= 0.0) {
             throw std::invalid_argument("Invalid center spacing");
         }
-
         center_distances_[i + NG] = distance;
     }
 }
@@ -194,6 +193,40 @@ Grid2D::Grid2D(AxisGrid radial, AxisGrid vertical)
         throw std::invalid_argument(
             "Physical radial coordinates must be nonnegative");
     }
+    constexpr int ng = AxisGrid::NG;
+    radial_centroid_.resize(nR() + 2 * ng);
+    radial_centroid_distance_.resize(nR() - 1 + 2 * ng);
+
+    for (int i = 0; i < nR(); ++i) {
+        const double center = radial_.center(i);
+        const double width = radial_.width(i);
+        // Cylindrical volume weighting; valid for nonuniform cells too.
+        radial_centroid_[i + ng] = center + width * (width / center) / 12.0;
+    }
+    // Extend the reflected ghost geometry used by AxisGrid. These are
+    // reflected coordinates, not centroids of additional physical annuli.
+    // This remains well defined even if an inner ghost cell crosses R=0.
+    const double lower = radial_.face(0), upper = radial_.face(nR());
+    for (int g = 1; g <= ng; ++g) {
+        radial_centroid_[ng - g] =
+            lower - (radial_centroid_[ng + g - 1] - lower);
+        radial_centroid_[ng + nR() + g - 1] =
+            upper + (upper - radial_centroid_[ng + nR() - g]);
+    }
+    for (int i = -ng; i < nR() + ng; ++i) {
+        const double centroid = radial_centroid_[i + ng];
+        if (!std::isfinite(centroid) || centroid <= radial_.face(i) ||
+            centroid >= radial_.face(i + 1)) {
+            throw std::invalid_argument("Invalid radial centroid");
+        }
+    }
+    for (int i = -ng; i < nR() + ng - 1; ++i) {
+        const double distance = radial_centroid_[i + ng + 1] - radial_centroid_[i + ng];
+        if (!std::isfinite(distance) || distance <= 0.0) {
+            throw std::invalid_argument("Invalid radial centroid spacing");
+        }
+        radial_centroid_distance_[i + ng] = distance;
+    }
 }
 
 double Grid2D::volume(int i, int j) const
@@ -222,4 +255,16 @@ double Grid2D::vertical_face_area(int i) const
 
     // Factored form of pi * (right^2 - left^2).
     return std::numbers::pi * (right - left) * (right + left);
+}
+
+double Grid2D::radial_centroid(int i) const
+{
+    assert(i >= -AxisGrid::NG && i < nR() + AxisGrid::NG);
+    return radial_centroid_[i + AxisGrid::NG];
+}
+
+double Grid2D::radial_centroid_distance(int i) const
+{
+    assert(i >= -AxisGrid::NG && i < nR() + AxisGrid::NG - 1);
+    return radial_centroid_distance_[i + AxisGrid::NG];
 }

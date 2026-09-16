@@ -5,7 +5,7 @@
 
 namespace {
 void validate_grid_size(const Field2D& field, const Grid2D& grid,
-                         Field2D::Location location = Field2D::Location::Center)
+                         Field2D::Location location = Field2D::Location::Centroid)
 {
     if (!field.matches(grid, location)) {
         throw std::invalid_argument("Field dimensions and location must match the grid");
@@ -19,7 +19,7 @@ void initialize_CR_source(Field2D& ndis, const Grid2D& grid)
     // Gaussian centered at (R, z) = (30, 30) kpc, as in the original model.
     // Ghost cells are left unchanged.
     for (int i = 0; i < grid.nR(); ++i) {
-        const double R1 = grid.R().center(i) - 30.0;
+        const double R1 = grid.radial_centroid(i) - 30.0;
         for (int j = 0; j < grid.nz(); ++j) {
             const double Z1 = grid.z().center(j) - 30.0;
             ndis(i, j) = std::exp(-R1 * R1 / 9.0 - Z1 * Z1 / 9.0) * DT;

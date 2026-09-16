@@ -22,7 +22,7 @@ LDFLAGS := -L$(LIBOMP_PATH)/lib -lomp
 TARGET := a.out
 
 # 自动查找所有 .cpp 源文件
-SRCS := main.cpp CR_advection.cpp grid.cpp initialization.cpp
+SRCS := main.cpp CR_advection.cpp field.cpp initialization.cpp
 OBJS := $(SRCS:.cpp=.o)
 DEPS := $(wildcard *.hpp)
 
