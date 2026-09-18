@@ -54,34 +54,39 @@ void write_array_to_bin(const std::string& filename, Field2D& arr, const std::si
 }
 
 namespace {
-// Reconstruct about the volume centroid, since n stores cell averages.
-double reconstruction_center(const AxisGrid& axis, int k, bool radial)
+// Read cached grid geometry; vertical volume centroids are midpoints.
+double reconstruction_center(const Grid2D& grid, int k, bool radial)
 {
-    const double c = axis.center(k);
-    return radial ? c + axis.width(k) * (axis.width(k) / c) / 12.0 : c;
+    return radial ? grid.radial_centroid(k) : grid.z().center(k);
 }
 
-double face_state(const Field2D& n, const AxisGrid& axis, int k, int transverse,
+double reconstruction_distance(const Grid2D& grid, int k, bool radial)
+{
+    return radial ? grid.radial_centroid_distance(k) : grid.z().center_distance(k);
+}
+
+double face_state(const Field2D& n, const Grid2D& grid, int k, int transverse,
                   bool radial, double face)
 {
+    const AxisGrid& axis = radial ? grid.R() : grid.z();
     auto value = [&](int cell) { return radial ? n(cell, transverse) : n(transverse, cell); };
     // Vacuum outside the upper boundary; constant reconstruction at domain edges.
     if (k < 0 || k >= axis.size()) return 0.0;
-    const double q = value(k);
+    const double q = value(k); // cell average in the current cell
     if (k == 0 || k == axis.size() - 1) return q;
-    const double x = reconstruction_center(axis, k, radial);
+    const double x = reconstruction_center(grid, k, radial); // cell centroid
     const double dl = q - value(k - 1), dr = value(k + 1) - q;
     const bool extremum = dl == 0.0 || dr == 0.0 || std::signbit(dl) != std::signbit(dr);
     if (extremum && (k < 2 || k + 2 >= axis.size())) return q;
     auto variance = [&](int cell) {
         const double w = axis.width(cell);
-        const double offset = reconstruction_center(axis, cell, radial) - axis.center(cell);
+        const double offset = reconstruction_center(grid, cell, radial) - axis.center(cell);
         return w * w / 12.0 - offset * offset;
     };
     // Fit a quadratic to three volume-weighted cell averages. This gives
     // (-q[k-1] + 5*q[k] + 2*q[k+1])/6 at the right face on a uniform z grid.
-    const double xm = reconstruction_center(axis, k - 1, radial) - x;
-    const double xp = reconstruction_center(axis, k + 1, radial) - x;
+    const double xm = -reconstruction_distance(grid, k - 1, radial);
+    const double xp = reconstruction_distance(grid, k, radial);
     const double vm = xm * xm + variance(k - 1) - variance(k);
     const double vp = xp * xp + variance(k + 1) - variance(k);
     const double curvature = (dr / xp + dl / xm) / (vp / xp - vm / xm);
@@ -93,8 +98,8 @@ double face_state(const Field2D& n, const AxisGrid& axis, int k, int transverse,
         // three neighboring stencils. Discontinuities and unresolved peaks
         // revert to constant reconstruction. No absolute smoothness threshold.
         auto second = [&](int cell) {
-            const double xl = reconstruction_center(axis, cell, radial) - reconstruction_center(axis, cell - 1, radial);
-            const double xr = reconstruction_center(axis, cell + 1, radial) - reconstruction_center(axis, cell, radial);
+            const double xl = reconstruction_distance(grid, cell - 1, radial);
+            const double xr = reconstruction_distance(grid, cell, radial);
             return ((value(cell + 1) - value(cell)) / xr -
                     (value(cell) - value(cell - 1)) / xl) / (xl + xr);
         };
@@ -167,13 +172,13 @@ void advance(Field2D& n, Field2D& temp, const Field2D* vr, const Field2D* vz,
                 for (int j = 0; j < grid.nz(); ++j) {
                     const double v = (*vr)(i,j);
                     fr(i,j) = v == 0.0 ? 0.0 : grid.R().face(i) * v *
-                        face_state(state, grid.R(), v >= 0.0 ? i - 1 : i, j, true, grid.R().face(i));
+                        face_state(state, grid, v >= 0.0 ? i - 1 : i, j, true, grid.R().face(i));
                 }
         if (vz)
             for (int i = 0; i < grid.nR(); ++i)
                 for (int j = 1; j <= grid.nz(); ++j) {
                     const double v = (*vz)(i,j);
-                    fz(i,j) = v == 0.0 ? 0.0 : v * face_state(state, grid.z(), v >= 0.0 ? j - 1 : j, i, false, grid.z().face(j));
+                    fz(i,j) = v == 0.0 ? 0.0 : v * face_state(state, grid, v >= 0.0 ? j - 1 : j, i, false, grid.z().face(j));
                 }
     };
     auto increment = [&](int i, int j) {
