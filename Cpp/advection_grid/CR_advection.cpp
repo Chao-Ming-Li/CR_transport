@@ -6,6 +6,8 @@
 #include <iostream>
 #include <span>
 #include <cmath>   
+#include <algorithm>
+#include <limits>
 
 // void initialize_grids_log(void){
 //     double Rs = 10.0;
@@ -66,7 +68,6 @@
 //     for (int i = -2; i < NZ + 2; i++){ std::cout<<Zc(i)<<" "; }
 // }
 
-
 namespace {
 void validate_legacy_field(const Field2D& field, const Grid2D& grid,
                          Field2D::Location location = Field2D::Location::Centroid)
@@ -113,6 +114,55 @@ void write_array_to_bin(const std::string& filename, Field2D& arr, const std::si
     // file 在离开作用域时会自动关闭，不需要显式调用 file.close()
 }
 
+void advection_upwind(Field2D& ndis, Field2D& temp, const Field2D& vR, const Field2D& vZ, const double dT, const Grid2D& grid) {
+
+    apply_boundary_conditions(ndis, grid);
+
+    Field2D flux_R(grid, Field2D::Location::RadialFace);
+    Field2D flux_Z(grid, Field2D::Location::VerticalFace);
+    // Each shared face is computed once, using its upwind cell average.
+    // Start from 1 because flux_R and flux_Z are initialied to be 0, so that flux_R(0,j) = 0 and flux_Z(i,0) = 0, which is consistent with the boundary conditions
+    for (int i = 1; i <= grid.nR(); ++i){ 
+        for (int j = 0; j < grid.nz(); ++j) {
+            const double upwind = vR(i,j) >= 0.0 ? ndis(i - 1,j) : ndis(i,j);
+            flux_R(i,j) = grid.R().face(i) * vR(i,j) * upwind;
+        }
+    }
+    for (int i = 0; i < grid.nR(); ++i){
+        for (int j = 1; j <= grid.nz(); ++j) {
+            const double upwind = vZ(i,j) >= 0.0 ? ndis(i,j - 1) : ndis(i,j);
+            flux_Z(i,j) = vZ(i,j) * upwind;
+        }
+    }
+    for (int i = 0; i < grid.nR(); ++i)
+        for (int j = 0; j < grid.nz(); ++j) {
+            const double radial = (flux_R(i + 1,j) - flux_R(i,j)) / (grid.R().center(i) * grid.R().width(i));
+            const double vertical = (flux_Z(i,j + 1) - flux_Z(i,j)) / grid.z().width(j);
+            temp(i,j) = ndis(i,j) - dT * (radial + vertical);
+        }
+    for (int i = 0; i < grid.nR(); ++i)
+        for (int j = 0; j < grid.nz(); ++j) ndis(i,j) = temp(i,j);
+    apply_boundary_conditions(ndis, grid);
+}
+
+void advection_upwind_1(Field2D& ndis, Field2D& temp, const Field2D& vR, const Field2D& vZ, const double dT, const Grid2D& grid) {
+
+    for (int i = 0; i < grid.nR(); ++i){
+        for (int j = 0; j < grid.nz(); ++j) {
+            double dn_dz = (ndis(i, j) - ndis(i, j - 1)) / grid.z().center_distance(j - 1);
+            temp(i, j) = ndis(i, j) - dT * (vZ(i, j) * dn_dz);
+        }
+    }
+    apply_boundary_conditions(temp, grid);
+
+    for (int i = 0; i < grid.nR(); ++i){
+        for (int j = 0; j < grid.nz(); ++j) {
+            ndis(i, j) = temp(i, j);
+        }
+    } 
+
+}
+
 inline void Van_leer_limiter(double& phi, double ratio) {
     if (ratio <= 0.0) {
         phi = 0.0;
@@ -121,22 +171,10 @@ inline void Van_leer_limiter(double& phi, double ratio) {
     }
 }
 
-void advection_TVD(Field2D& ndis, Field2D& temp, Field2D& vR, Field2D& vZ, double dT, const Grid2D& grid) {
-    validate_legacy_field(ndis, grid);
-    validate_legacy_field(temp, grid);
-    validate_legacy_field(vR, grid, Field2D::Location::RadialFace);
-    validate_legacy_field(vZ, grid, Field2D::Location::VerticalFace);
+void advection_TVD(Field2D& ndis, Field2D& temp, const Field2D& vR, const Field2D& vZ, const double dT, const Grid2D& grid) {
 
     // Ensure ghost cells are set before computing fluxes
     apply_boundary_conditions(ndis, grid); 
-
-    //Ensure zero flux at the inner-R/lower-z boundaries
-    for (int i = -Field2D::NG; i < ndis.nR() + Field2D::NG; i++) {
-        vZ(i, 0) = 0.0; // lower-z boundary
-    }
-    for (int j = -Field2D::NG; j < ndis.nz() + Field2D::NG; j++) {
-        vR(0, j) = 0.0; // inner-R boundary
-    }
 
     // CFL condition check, start from 1 because velocity is defined at faces, vR(0,j) = 0, vZ(i,0) = 0, so the first cell is not used for CFL check  
     for (int i = 1; i < grid.nR(); i++) {
@@ -232,8 +270,7 @@ void advection_TVD(Field2D& ndis, Field2D& temp, Field2D& vR, Field2D& vZ, doubl
     apply_boundary_conditions(ndis, grid);
 }
 
-
-void advection_TVD_R(Field2D& ndis, Field2D& temp, Field2D& vR, double dT, const Grid2D& grid) {
+void advection_TVD_R(Field2D& ndis, Field2D& temp, const Field2D& vR, const double dT, const Grid2D& grid) {
 
     // 2D TVD scheme for advection in cylindrical coordinates
     // ----- R direction -----
@@ -275,16 +312,15 @@ void advection_TVD_R(Field2D& ndis, Field2D& temp, Field2D& vR, double dT, const
             }
         }
     }
-    for (int i = 0; i < grid.nR(); i++) {
-        for (int j = 0; j < grid.nz(); j++) {
-            ndis(i,j) = temp(i,j);
-        }
-    }
-    apply_boundary_conditions(ndis, grid);
+    // for (int i = 0; i < grid.nR(); i++) {
+    //     for (int j = 0; j < grid.nz(); j++) {
+    //         ndis(i,j) = temp(i,j);
+    //     }
+    // }
+    apply_boundary_conditions(temp, grid);
 }
 
-
-void advection_TVD_Z(Field2D& ndis, Field2D& temp, Field2D& vZ, double dT, const Grid2D& grid) {
+void advection_TVD_Z(Field2D& ndis, Field2D& temp, const Field2D& vZ, const double dT, const Grid2D& grid) {
 
     // 2D TVD scheme for advection in cylindrical coordinates
 
@@ -324,92 +360,114 @@ void advection_TVD_Z(Field2D& ndis, Field2D& temp, Field2D& vZ, double dT, const
             }
         }
     }
+    // for (int i = 0; i < grid.nR(); i++) {
+    //     for (int j = 0; j < grid.nz(); j++) {
+    //         ndis(i,j) = temp(i,j);
+    //     }
+    // }
+    apply_boundary_conditions(temp, grid);
+}
+
+void advance_TVD_SSPRK2(Field2D& ndis, Field2D& temp, const Field2D& vR, const Field2D& vZ, const double dT, const Grid2D& grid){
+    Field2D temp_R(grid), temp_z(grid);
+    // SSPRK2 time integration for TVD scheme 
+    advection_TVD_R(ndis, temp_R, vR, dT, grid); // First stage
+    advection_TVD_Z(ndis, temp_z, vZ, dT, grid); // First stage
     for (int i = 0; i < grid.nR(); i++) {
         for (int j = 0; j < grid.nz(); j++) {
-            ndis(i,j) = temp(i,j);
+            temp(i,j) = temp_R(i,j) + temp_z(i,j) - ndis(i,j); // Store first stage result
+        }
+    }
+    apply_boundary_conditions(temp, grid);
+
+    advection_TVD_R(temp, temp_R, vR, dT, grid); // Second stage
+    advection_TVD_Z(temp, temp_z, vZ, dT, grid); // Second stage
+    for (int i = 0; i < grid.nR(); i++) {
+        for (int j = 0; j < grid.nz(); j++) {
+            ndis(i,j) = 0.5 * (ndis(i,j) + temp_R(i,j) + temp_z(i,j) - temp(i, j)); // Combine stages
+        }
+    }
+    apply_boundary_conditions(ndis, grid);
+}
+
+inline double minmod(double a,double b)
+{
+    if(a*b<=0.0)
+        return 0.0;
+    return fabs(a)<fabs(b)?a:b;
+}
+
+inline double MC_limiter(double sL,double sC,double sR)
+{
+    return minmod(2.0 * minmod(sL, sR), sC);
+}
+
+void advection_PLM(Field2D& ndis, Field2D& temp, const Field2D& vR, const Field2D& vZ, const double dT, const Grid2D& grid) {
+
+    apply_boundary_conditions(ndis, grid);
+    // Original MC-limited PLM with sequential R and Z forward-Euler sweeps.
+    // Caller supplies a stable timestep and zero lower-boundary velocities.
+    Field2D flux_R(grid, Field2D::Location::RadialFace);
+    Field2D flux_Z(grid, Field2D::Location::VerticalFace);
+    // ----- R direction -----
+    for (int i = 0; i < grid.nR() + 1; i++) {
+        for (int j = 0; j < grid.nz(); j++) {
+            if (vR(i, j) >= 0.0){
+                double sF_L = (ndis(i - 1, j) - ndis(i - 2, j)) / grid.radial_centroid_distance(i - 2);
+                double sF_R = (ndis(i, j) - ndis(i - 1, j)) / grid.radial_centroid_distance(i - 1);
+                double sC = (ndis(i, j) - ndis(i - 2, j)) / (grid.radial_centroid_distance(i - 1) + grid.radial_centroid_distance(i - 2));
+                double slope = MC_limiter(sF_L, sC, sF_R);
+                double ndis_face = ndis(i - 1, j) + slope * (grid.R().face(i) - grid.radial_centroid(i - 1)); // reconstruct left state at face i
+                flux_R(i, j) = grid.R().face(i) * vR(i, j) * ndis_face;
+            }
+            else{
+                double sF_L = (ndis(i, j) - ndis(i - 1, j)) / grid.radial_centroid_distance(i - 1);
+                double sF_R = (ndis(i + 1, j) - ndis(i, j)) / grid.radial_centroid_distance(i);
+                double sC = (ndis(i + 1, j) - ndis(i - 1, j)) / (grid.radial_centroid_distance(i - 1) + grid.radial_centroid_distance(i));
+                double slope = MC_limiter(sF_L, sC, sF_R);
+                double ndis_face = ndis(i, j) - slope * (grid.radial_centroid(i) - grid.R().face(i)); // reconstruct right state at face i
+                flux_R(i, j) = grid.R().face(i) * vR(i, j) * ndis_face;
+            }
+        }
+    }
+    for (int i = 0; i < grid.nR(); i++) {
+        for (int j = 0; j < grid.nz(); j++) {
+            temp(i, j) = ndis(i, j) - dT * (flux_R(i + 1, j) - flux_R(i, j)) / grid.R().width(i) / grid.R().center(i);
+        }
+    }
+    apply_boundary_conditions(temp, grid);
+    // ----- Z direction -----
+    for (int i = 0; i < grid.nR(); i++) {
+        for (int j = 0; j < grid.nz() + 1; j++) {
+            if (vZ(i, j) >= 0.0){
+                double sF_L = (temp(i, j - 1) - temp(i, j - 2)) / grid.z().center_distance(j - 2);
+                double sF_R = (temp(i, j) - temp(i, j - 1)) / grid.z().center_distance(j - 1);
+                double sC = (temp(i, j) - temp(i, j - 2)) / (grid.z().center_distance(j - 1) + grid.z().center_distance(j - 2));
+                double slope = MC_limiter(sF_L, sC, sF_R);
+                double temp_face = temp(i, j - 1) + slope * (grid.z().face(j) - grid.z().center(j - 1)); // reconstruct left state at face j
+                flux_Z(i, j) = vZ(i, j) * temp_face;
+            }
+            else{
+                double sF_L = (temp(i, j) - temp(i, j - 1)) / grid.z().center_distance(j - 1);
+                double sF_R = (temp(i, j + 1) - temp(i, j)) / grid.z().center_distance(j);
+                double sC = (temp(i, j + 1) - temp(i, j - 1)) / (grid.z().center_distance(j - 1) + grid.z().center_distance(j));
+                double slope = MC_limiter(sF_L, sC, sF_R);
+                double temp_face = temp(i, j) - slope * (grid.z().center(j) - grid.z().face(j)); // reconstruct right state at face j
+                flux_Z(i, j) = vZ(i, j) * temp_face;
+            }
+        }
+    }
+    for (int i = 0; i < grid.nR(); i++) {
+        for (int j = 0; j < grid.nz(); j++) {
+            ndis(i, j) = temp(i, j) - dT * (flux_Z(i, j + 1) - flux_Z(i, j)) / grid.z().width(j);
         }
     }
     apply_boundary_conditions(ndis, grid);
 }
 
 
-// inline double minmod(double a,double b)
-// {
-//     if(a*b<=0.0)
-//         return 0.0;
-//     return fabs(a)<fabs(b)?a:b;
-// }
 
-// inline double MC_limiter(double sL,double sC,double sR)
-// {
-//     return minmod(2.0 * minmod(sL, sR), sC);
-// }
-
-// void advection_PLM(Field2D& ndis, Field2D& temp, Field2D& vR, Field2D& vZ, double dT, const Grid2D& grid) {
-//     validate_legacy_field(ndis, grid);
-//     validate_legacy_field(temp, grid);
-//     validate_legacy_field(vR, grid, Field2D::Location::RadialFace);
-//     validate_legacy_field(vZ, grid, Field2D::Location::VerticalFace);
-//     // 2D PLM scheme for advection in cylindrical coordinates
-//     Field2D flux_R(ndis.nR(), ndis.nz()), flux_Z(ndis.nR(), ndis.nz()); // slopes for PLM
-//     // ----- R direction -----
-//     for (int i = 0; i < grid.nR() + 1; i++) {
-//         for (int j = 0; j < grid.nz() + 1; j++) {
-//             if (vR(i, j) >= 0.0){
-//                 double sF_L = (ndis(i - 1, j) - ndis(i - 2, j)) / grid.radial_centroid_distance(i - 2);
-//                 double sF_R = (ndis(i, j) - ndis(i - 1, j)) / grid.radial_centroid_distance(i - 1);
-//                 double sC = (ndis(i, j) - ndis(i - 2, j)) / (grid.radial_centroid_distance(i - 1) + grid.radial_centroid_distance(i - 2));
-//                 double slope = MC_limiter(sF_L, sC, sF_R);
-//                 double ndis_face = ndis(i - 1, j) + slope * (grid.R().face(i) - grid.radial_centroid(i - 1)); // reconstruct left state at face i
-//                 flux_R(i, j) = grid.R().face(i) * vR(i, j) * ndis_face;
-//             }
-//             else{
-//                 double sF_L = (ndis(i, j) - ndis(i - 1, j)) / grid.radial_centroid_distance(i - 1);
-//                 double sF_R = (ndis(i + 1, j) - ndis(i, j)) / grid.radial_centroid_distance(i);
-//                 double sC = (ndis(i + 1, j) - ndis(i - 1, j)) / (grid.radial_centroid_distance(i - 1) + grid.radial_centroid_distance(i));
-//                 double slope = MC_limiter(sF_L, sC, sF_R);
-//                 double ndis_face = ndis(i, j) - slope * (grid.radial_centroid(i) - grid.R().face(i)); // reconstruct right state at face i
-//                 flux_R(i, j) = grid.R().face(i) * vR(i, j) * ndis_face;
-//             }
-//         }
-//     }
-//     for (int i = 0; i < grid.nR(); i++) {
-//         for (int j = 0; j < grid.nz(); j++) {
-//             temp(i, j) = ndis(i, j) - dT * (flux_R(i + 1, j) - flux_R(i, j)) / grid.R().width(i) / grid.radial_centroid(i);
-//         }
-//     }
-//     apply_boundary_conditions(temp, grid);
-//     // ----- Z direction -----
-//     for (int i = 0; i < grid.nR() + 1; i++) {
-//         for (int j = 0; j < grid.nz() + 1; j++) {
-//             if (vZ(i, j) >= 0.0){
-//                 double sF_L = (temp(i, j - 1) - temp(i, j - 2)) / grid.z().center_distance(j - 2);
-//                 double sF_R = (temp(i, j) - temp(i, j - 1)) / grid.z().center_distance(j - 1);
-//                 double sC = (temp(i, j) - temp(i, j - 2)) / (grid.z().center_distance(j - 1) + grid.z().center_distance(j - 2));
-//                 double slope = MC_limiter(sF_L, sC, sF_R);
-//                 double temp_face = temp(i, j - 1) + slope * (grid.z().face(j) - grid.z().center(j - 1)); // reconstruct left state at face j
-//                 flux_Z(i, j) = vZ(i, j) * temp_face;
-//             }
-//             else{
-//                 double sF_L = (temp(i, j) - temp(i, j - 1)) / grid.z().center_distance(j - 1);
-//                 double sF_R = (temp(i, j + 1) - temp(i, j)) / grid.z().center_distance(j);
-//                 double sC = (temp(i, j + 1) - temp(i, j - 1)) / (grid.z().center_distance(j - 1) + grid.z().center_distance(j));
-//                 double slope = MC_limiter(sF_L, sC, sF_R);
-//                 double temp_face = temp(i, j) - slope * (grid.z().center(j) - grid.z().face(j)); // reconstruct right state at face j
-//                 flux_Z(i, j) = vZ(i, j) * temp_face;
-//             }
-//         }
-//     }
-//     for (int i = 0; i < grid.nR(); i++) {
-//         for (int j = 0; j < grid.nz(); j++) {
-//             ndis(i, j) = temp(i, j) - dT * (flux_Z(i, j + 1) - flux_Z(i, j)) / grid.z().width(j);
-//         }
-//     }
-//     apply_boundary_conditions(ndis, grid);
-// }
-
-
-void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_H, Field2D& vR, Field2D& vZ, const Grid2D& grid) {
+void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_H, const Field2D& vR, const Field2D& vZ, const Grid2D& grid) {
     validate_legacy_field(ndis_C, grid);
     validate_legacy_field(ndis_H, grid);
     validate_legacy_field(vR, grid, Field2D::Location::RadialFace);
@@ -420,24 +478,31 @@ void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_H, Field2D& vR, Fie
     initialize_CR_source(src_C, grid);
     apply_boundary_conditions(ndis_C, grid);
 
-    // for (int t = 0; t < NT; t++){
-    //     advection_TVD(ndis_C, temp, vR, vZ, DT, grid);
-    //     write_array_to_bin("ndis_C.bin", ndis_C, ndis_C.data.size());
+    // for (int t = 0; t < NT; ++t) {
+    //     advection_upwind_1(ndis_C, temp, vR, vZ, DT, grid);
+    //     if (t % 10 == 0)
+    //         write_array_to_bin("ndis_C_dt5_t100_upwind_1.bin", ndis_C, ndis_C.data.size());
     // }
-
-    // Strang splitting with alternate directional updates
-    if (NT > 0) {
-        advection_TVD_R(ndis_C, temp, vR, 0.5 * DT, grid);
-
-        for (int step = 0; step < NT; ++step) {
-            advection_TVD_Z(ndis_C, temp, vZ, DT, grid);
-
-            const double dt_R = (step == NT - 1) ? 0.5 * DT : DT;
-            advection_TVD_R(ndis_C, temp, vR, dt_R, grid);
+    for (int t = 0; t < NT; t++){
+        // advection_TVD(ndis_C, temp, vR, vZ, DT, grid);
+        advance_TVD_SSPRK2(ndis_C, temp, vR, vZ, DT, grid);
+        if (t % 10 == 0) {
+            write_array_to_bin("ndis_C_dt5_t100_tvd_SSPRK2.bin", ndis_C, ndis_C.data.size());
         }
     }
-    
-    write_array_to_bin("ndis_C_t_ssad_centroid.bin", ndis_C, ndis_C.data.size());
 
+    // Strang splitting with alternate directional updates
+    // if (NT > 0) {
+    //     advection_TVD_R(ndis_C, temp, vR, 0.5 * DT, grid);
+
+    //     for (int step = 0; step < NT; ++step) {
+    //         advection_TVD_Z(ndis_C, temp, vZ, DT, grid);
+
+    //         const double dt_R = (step == NT - 1) ? 0.5 * DT : DT;
+    //         advection_TVD_R(ndis_C, temp, vR, dt_R, grid);
+    //         if (step % 50 == 0) {
+    //             write_array_to_bin("ndis_C_dt1_t500_TVD_strang_split.bin", ndis_C, ndis_C.data.size());
+    //         }
+    //     }
+    // }
 }
-

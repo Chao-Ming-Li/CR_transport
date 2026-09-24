@@ -10,9 +10,10 @@
 
 int main() {
     // omp_set_num_threads(10);
-
     const Grid2D grid(AxisGrid::linear(100, 0.0, 100.0),
                       AxisGrid::linear(100, 0.0, 100.0));
+    // const Grid2D grid(AxisGrid::geometric(100, 0.0, 100.0, 1.01),
+    //                   AxisGrid::geometric(100, 0.0, 100.0, 1.01));
 
     Field2D ndis_C(grid);
     Field2D ndis_H(grid);

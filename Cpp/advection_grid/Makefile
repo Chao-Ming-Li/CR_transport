@@ -40,7 +40,7 @@ $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) $(TARGET) test_grid test_field test_advection
+	rm -f $(OBJS) $(TARGET) test_grid test_field test_advection test_upwind benchmark_advection
 	@echo "Cleaned build artifacts."
 
 run: $(TARGET)
@@ -71,3 +71,35 @@ test-advection: test_advection
 	./test_advection
 
 .PHONY: test-advection
+
+test_upwind: test_upwind.cpp CR_advection.cpp initialization.cpp field.cpp $(DEPS)
+	$(CXX) $(CXXFLAGS) test_upwind.cpp CR_advection.cpp initialization.cpp field.cpp -o $@ $(LDFLAGS)
+
+test-upwind: test_upwind
+	./test_upwind
+
+.PHONY: test-upwind
+
+benchmark_advection: benchmark_advection.cpp CR_advection.cpp initialization.cpp field.cpp $(DEPS)
+	$(CXX) $(CXXFLAGS) benchmark_advection.cpp CR_advection.cpp initialization.cpp field.cpp -o $@ $(LDFLAGS)
+
+benchmark-advection: benchmark_advection
+	./benchmark_advection
+
+.PHONY: benchmark-advection
+
+compare_diffusion: compare_diffusion.cpp CR_advection.cpp initialization.cpp field.cpp $(DEPS)
+	$(CXX) $(CXXFLAGS) compare_diffusion.cpp CR_advection.cpp initialization.cpp field.cpp -o $@ $(LDFLAGS)
+
+compare-diffusion: compare_diffusion
+	./compare_diffusion
+
+.PHONY: compare-diffusion
+
+compare_ssprk2: compare_ssprk2.cpp CR_advection.cpp initialization.cpp field.cpp $(DEPS)
+	$(CXX) $(CXXFLAGS) compare_ssprk2.cpp CR_advection.cpp initialization.cpp field.cpp -o $@ $(LDFLAGS)
+
+compare-ssprk2: compare_ssprk2
+	./compare_ssprk2
+
+.PHONY: compare-ssprk2
