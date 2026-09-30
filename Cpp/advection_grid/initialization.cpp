@@ -31,15 +31,32 @@ void initialize_wind_velocity(Field2D& vR, Field2D& vZ, const Grid2D& grid)
 {
     validate_grid_size(vR, grid, Field2D::Location::RadialFace);
     validate_grid_size(vZ, grid, Field2D::Location::VerticalFace);
-    // Radial faces: (R.face(i), z.center(j)).
+    // // Radial faces: (R.face(i), z.center(j)).
+    // for (int i = 0; i < vR.nR(); ++i)
+    //     for (int j = 0; j < vR.nz(); ++j)
+    //         vR(i, j) = 0.0;
+
+    // // Vertical faces: (R.center(i), z.face(j)); velocity in kpc / yr.
+    // for (int i = 0; i < vZ.nR(); ++i)
+    //     for (int j = 0; j < vZ.nz(); ++j)
+    //         vZ(i, j) = j == 0 ? 0.0 : 0.1;
+    // const double a = 0.01;   // inverse simulation time unit
+    // const double b = 0.01;   // inverse simulation time unit
+    // const double Rstar = 30.0;
+
     for (int i = 0; i < vR.nR(); ++i)
         for (int j = 0; j < vR.nz(); ++j)
-            vR(i, j) = 0.0;
+            // vR(i, j) = a * grid.R().face(i);
+            vR(i, j) = i == 0 ? 0.0 : 3e-7;  // kpc / yr
+            // vR(i, j) = 0.0;
 
-    // Vertical faces: (R.center(i), z.face(j)); velocity in kpc / yr.
     for (int i = 0; i < vZ.nR(); ++i)
         for (int j = 0; j < vZ.nz(); ++j)
-            vZ(i, j) = j == 0 ? 0.0 : 0.1;
+            // vZ(i, j) = b * (grid.radial_centroid(i) / Rstar)
+            //             * grid.z().face(j);
+            vZ(i, j) = j == 0 ? 0.0 : 3e-7; // kpc / yr
+            // vZ(i, j) = 0.0;
+
 
 }
 

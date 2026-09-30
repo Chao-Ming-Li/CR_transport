@@ -1,5 +1,5 @@
 #include <iostream>
-#include "CR_advection.hpp" 
+#include "CR_transport_solver.hpp" 
 #include "field.hpp"
 #include "initialization.hpp"
 #include <numbers>
@@ -10,8 +10,8 @@
 
 int main() {
     // omp_set_num_threads(10);
-    const Grid2D grid(AxisGrid::linear(100, 0.0, 100.0),
-                      AxisGrid::linear(100, 0.0, 100.0));
+    const Grid2D grid(AxisGrid::linear(1000, 0.0, 200.0),  // kpc
+                      AxisGrid::linear(1000, 0.0, 200.0)); // kpc
     // const Grid2D grid(AxisGrid::geometric(100, 0.0, 100.0, 1.01),
     //                   AxisGrid::geometric(100, 0.0, 100.0, 1.01));
 

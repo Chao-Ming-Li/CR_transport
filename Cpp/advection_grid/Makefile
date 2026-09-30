@@ -22,7 +22,7 @@ LDFLAGS := -L$(LIBOMP_PATH)/lib -lomp
 TARGET := a.out
 
 # 自动查找所有 .cpp 源文件
-SRCS := main.cpp CR_advection.cpp field.cpp initialization.cpp
+SRCS := main.cpp CR_advection.cpp CR_transport_solver.cpp field.cpp initialization.cpp
 OBJS := $(SRCS:.cpp=.o)
 DEPS := $(wildcard *.hpp)
 
@@ -40,7 +40,7 @@ $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) $(TARGET) test_grid test_field test_advection test_upwind benchmark_advection
+	rm -f $(OBJS) $(TARGET) test_grid test_field test_advection test_upwind benchmark_advection test_advection_unified
 	@echo "Cleaned build artifacts."
 
 run: $(TARGET)
@@ -103,3 +103,11 @@ compare-ssprk2: compare_ssprk2
 	./compare_ssprk2
 
 .PHONY: compare-ssprk2
+
+test_advection_unified: test_advection_unified.cpp CR_advection_unified.cpp CR_advection.cpp initialization.cpp field.cpp $(DEPS)
+	$(CXX) $(CXXFLAGS) test_advection_unified.cpp CR_advection_unified.cpp CR_advection.cpp initialization.cpp field.cpp -o $@ $(LDFLAGS)
+
+test-advection-unified: test_advection_unified
+	./test_advection_unified
+
+.PHONY: test-advection-unified

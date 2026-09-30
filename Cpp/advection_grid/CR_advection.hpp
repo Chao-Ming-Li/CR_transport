@@ -1,32 +1,30 @@
-#pragma once  // 现代写法，防止头文件被重复包含（等价于传统的 #ifndef/#define/#endif）
+#pragma once
 
 #include "field.hpp"
 
-#include <vector>
-#include <fstream>
-#include <iostream>
-#include <span>
+namespace cr_advection {
 
+enum class Reconstruction { Constant, PLM };
+enum class Limiter { Minmod, VanLeer, MC };
+enum class TimeIntegrator { Euler, SSPRK2 };
+enum class Splitting { Unsplit, RadialThenVertical };
 
+struct Options {
+    Reconstruction reconstruction = Reconstruction::PLM;
+    Limiter limiter = Limiter::VanLeer;
+    TimeIntegrator integrator = TimeIntegrator::SSPRK2;
+    Splitting splitting = Splitting::Unsplit;
+};
 
-// Distribution initializers implemented in initialization.cpp.
-// Field dimensions must match the supplied grid.
+// Conservative cylindrical transport of a nonnegative cell-average density.
+// Velocities are face fields held fixed during the step. Lower faces are
+// reflecting (zero flux); outer ghost cells are zero, as in the legacy solver.
+// Caller supplies a stable dt; negative/nonfinite stage densities throw without
+// modifying density. No clipping or automatic timestep selection is performed.
+// Constant reconstruction ignores limiter. RadialThenVertical supports Euler
+// only and reproduces the legacy sequential directional update.
+// VanLeer uses sign-aware slopes without the legacy absolute 1e-12 offset.
+void advance(Field2D& density, const Field2D& vR, const Field2D& vZ,
+             double dt, const Grid2D& grid, const Options& options = {});
 
-void apply_boundary_conditions(Field2D& ndis, const Grid2D& grid);
-void write_array_to_bin(const std::string& filename, Field2D& arr, const std::size_t size);
-
-void advection_upwind(Field2D& ndis, Field2D& temp, const Field2D& vR, const Field2D& vZ, const double dT, const Grid2D& grid);
-void advection_upwind_1(Field2D& ndis, Field2D& temp, const Field2D& vR, const Field2D& vZ, const double dT, const Grid2D& grid);
-void advection_TVD(Field2D& ndis, Field2D& temp, const Field2D& vR, const Field2D& vZ, const double dT, const Grid2D& grid);
-
-void advection_TVD_R(Field2D& ndis, Field2D& temp, const Field2D& vR, const double dT, const Grid2D& grid);
-void advection_TVD_Z(Field2D& ndis, Field2D& temp, const Field2D& vZ, const double dT, const Grid2D& grid);
-void advance_TVD_SSPRK2(Field2D& ndis, Field2D& temp, const Field2D& vR, const Field2D& vZ, const double dT, const Grid2D& grid);
-
-// MC-limited linear reconstruction; R then Z forward-Euler sweeps.
-// Uses cached radial centroids and physical annular volumes. ndis/temp must
-// be distinct Centroid fields. Caller supplies a stable dT and zero velocities
-// at reflecting lower faces. This implementation is in CR_advection.cpp only.
-void advection_PLM(Field2D& ndis, Field2D& temp, const Field2D& vR, const Field2D& vZ, const double dT, const Grid2D& grid);
-
-void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_H, const Field2D& vR, const Field2D& vZ, const Grid2D& grid);
+} // namespace cr_advection

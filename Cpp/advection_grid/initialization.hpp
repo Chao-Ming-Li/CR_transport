@@ -7,8 +7,8 @@
 #include <span>
 
 // initialize constants for solver
-#define DT 5.0 // Time step in years
-#define NT 100 // Number of time steps
+#define DT 10000.0 // Time step in years
+#define NT 10000 // Number of time steps
 
 
 void initialize_CR_source(Field2D& ndis, const Grid2D& grid);
