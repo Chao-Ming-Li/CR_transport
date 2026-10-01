@@ -4,7 +4,7 @@
 
 namespace cr_advection {
 
-enum class Reconstruction { Constant, PLM };
+enum class Reconstruction { Constant, PLM, PPM };
 enum class Limiter { Minmod, VanLeer, MC };
 enum class TimeIntegrator { Euler, SSPRK2 };
 enum class Splitting { Unsplit, RadialThenVertical };

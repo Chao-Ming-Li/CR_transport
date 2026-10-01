@@ -73,6 +73,60 @@ void test_geometric()
         near(axis.face(i), expected_faces[i], "Known geometric face");
 }
 
+void test_geometric_capped()
+{
+    const auto requested = AxisGrid::geometric_capped(0., 200., 0.1, 1., 1.03);
+    constexpr int geometric_count = 78;
+    const double requested_transition = 0.1 * std::expm1(geometric_count * std::log(1.03)) / 0.03;
+    check(requested.size() == 248, "1.03 grid cell count");
+    near(requested.width(0), 0.1, "1.03 start width");
+    near(requested.face(geometric_count), requested_transition, "1.03 transition");
+    for (int i = 1; i < geometric_count; ++i)
+        near(requested.width(i) / requested.width(i-1), 1.03, "1.03 geometric ratio");
+    for (int i = geometric_count; i < requested.size(); ++i)
+        near(requested.width(i), 1., "1.03 constant region");
+    near(requested.face(requested.size()), requested_transition + 170., "1.03 full-cell endpoint");
+    near(requested.width(requested.size()-1), 1., "1.03 final cell");
+    std::cout << "1.03 configuration: " << requested.size()
+              << " cells, transition=" << requested.face(geometric_count)
+              << " kpc, final width=" << requested.width(requested.size()-1) << " kpc\n";
+
+    const auto axis = AxisGrid::geometric_capped(0., 200., 0.1, 1., 1.003);
+    near(axis.width(0), 0.1, "Requested start width");
+    check(axis.face(axis.size()) >= 200. && axis.face(axis.size()) - 200. <= 1., "Target endpoint overshoot");
+    check(axis.face(axis.size()-1) < 200., "Stop at first face beyond target");
+    for (int i = 0; i < axis.size(); ++i) {
+        check(axis.width(i) > 0. && axis.width(i) < 1., "Cap not reached in box");
+        if (i > 0)
+            near(axis.width(i)/axis.width(i-1), 1.003, "Requested growth ratio");
+    }
+    const int k = static_cast<int>(std::ceil(std::log(10.) / std::log(1.003)));
+    const double transition = 0.1 * std::expm1(k * std::log(1.003)) / 0.003;
+    const auto extended = AxisGrid::geometric_capped(0., 400., 0.1, 1., 1.003);
+    near(extended.face(k), transition, "Calculated transition coordinate");
+    near(extended.width(k), 1., "First constant-width cell");
+    for (int i = k; i < extended.size(); ++i)
+        near(extended.width(i), 1., "Constant outer widths");
+    near(extended.width(-1), extended.width(0), "Lower ghost");
+    near(extended.width(extended.size()), extended.width(extended.size()-1), "Upper ghost");
+    const auto shifted = AxisGrid::geometric_capped(5., 405., 0.1, 1., 1.003);
+    near(shifted.face(k), 5. + transition, "Shifted transition");
+    const auto uniform = AxisGrid::geometric_capped(0., 2., 0.1, 0.1, 1.);
+    check(uniform.size() == 20, "Decimal uniform count");
+    const auto single = AxisGrid::geometric_capped(0., 2., 0.5, 1., 2.);
+    near(single.width(0), 0.5, "Single geometric cell");
+    near(single.width(1), 1., "Single linear cell");
+    near(single.width(2), 1., "Full final cell");
+    near(single.face(single.size()), 2.5, "Extended endpoint");
+    rejects([] { AxisGrid::geometric_capped(0., 10., 0., 1., 1.003); }, "Zero width");
+    rejects([] { AxisGrid::geometric_capped(0., 10., 2., 1., 1.003); }, "Reversed widths");
+    rejects([] { AxisGrid::geometric_capped(0., 10., 0.1, 1., 0.9); }, "Shrinking ratio");
+    std::cout << "Requested grid cells=" << axis.size()
+              << " last full width=" << axis.width(axis.size()-2)
+              << " final width=" << axis.width(axis.size()-1)
+              << " transition index=" << k << " coordinate=" << transition << '\n';
+}
+
 void test_custom_and_ghosts()
 {
     // Minimum supported cell count, with unequal widths 1 and 3.
@@ -176,6 +230,7 @@ int main()
         test_linear();
         std::cout << "PASS: linear grid\n";
         test_geometric();
+        test_geometric_capped();
         std::cout << "PASS: geometric grids\n";
         test_custom_and_ghosts();
         std::cout << "PASS: custom grid and ghost cells\n";

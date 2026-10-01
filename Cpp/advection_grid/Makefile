@@ -48,8 +48,8 @@ run: $(TARGET)
 
 rebuild: clean all
 
-test_grid: test_grid.cpp grid.cpp field.hpp
-	$(CXX) -std=c++20 -O0 -g -Wall -Wextra test_grid.cpp grid.cpp -o $@
+test_grid: test_grid.cpp field.cpp field.hpp
+	$(CXX) -std=c++20 -O0 -g -Wall -Wextra test_grid.cpp field.cpp -o $@
 
 test-grid: test_grid
 	./test_grid

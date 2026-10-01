@@ -53,7 +53,7 @@ void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_H, const Field2D& v
     (void)ndis_H;
     cr_advection::Options options;
     options.reconstruction = cr_advection::Reconstruction::PLM;
-    options.limiter = cr_advection::Limiter::VanLeer;
+    options.limiter = cr_advection::Limiter::MC;
     options.integrator = cr_advection::TimeIntegrator::SSPRK2;
     options.splitting = cr_advection::Splitting::Unsplit;
 
@@ -61,6 +61,6 @@ void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_H, const Field2D& v
     for (int t = 0; t < NT; ++t) {
         cr_advection::advance(ndis_C, vR, vZ, DT, grid, options);
         if (t % 10 == 0)
-            write_array_to_bin("ndis_C_transport_dx02_dt1e4.bin", ndis_C, ndis_C.data.size());
+            write_array_to_bin("ndis_C_transport_dR50_dz10_r1.03_dt1e4_MC_fix.bin", ndis_C, ndis_C.data.size());
     }
 }

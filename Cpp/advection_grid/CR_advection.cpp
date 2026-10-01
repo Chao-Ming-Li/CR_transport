@@ -43,8 +43,13 @@ double face_value(const Field2D& n, const Grid2D& g, const Options& opt,
     const double sr = (value(cell + 1) - value(cell)) / dr;
     const double sc = (value(cell + 1) - value(cell - 1)) / (dl + dr);
     const double xf = radial ? g.R().face(face) : g.z().face(face);
-    return value(cell) + limited_slope(sl, sc, sr, opt.limiter)
-                         * (xf - coordinate(cell));
+    const double reconstructed = value(cell)
+        + limited_slope(sl, sc, sr, opt.limiter) * (xf - coordinate(cell));
+    // Keep the face state between its adjacent cell averages. Near a steep
+    // drop, roundoff in the coordinates can otherwise make it slightly negative.
+    const double neighbor = value(cell + (velocity >= 0 ? 1 : -1));
+    return std::clamp(reconstructed, std::min(value(cell), neighbor),
+                      std::max(value(cell), neighbor));
 }
 
 // Return L(n), not a complete Euler update. Compute each shared face once.

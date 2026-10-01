@@ -18,6 +18,13 @@ public:
     // ratio == 1 gives a uniform grid.
     static AxisGrid geometric(int n, double lower, double upper, double ratio);
 
+    // Parameters: lower, upper, start width, maximum width, increase ratio.
+    // Grow widths by ratio >= 1 from first_width, then hold at max_width.
+    // upper is a target: stop at the first full-cell face at or beyond it.
+    // Overshoot is at most max_width (up to rounding); no cell is shortened.
+    static AxisGrid geometric_capped(double lower, double upper,
+                                     double first_width, double max_width, double ratio);
+
     // Arbitrary strictly increasing physical faces.
     // Number of cells is physical_faces.size() - 1.
     static AxisGrid from_faces(std::vector<double> physical_faces);

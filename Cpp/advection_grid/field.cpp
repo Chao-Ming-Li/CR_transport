@@ -1,5 +1,6 @@
 #include "field.hpp"
 #include <cassert>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <numbers>
@@ -81,6 +82,27 @@ AxisGrid AxisGrid::geometric(int n, double lower, double upper, double ratio)
 
     // Constructor rejects grids whose cells collapse under
     // floating-point rounding because stretching is too extreme.
+    return AxisGrid(std::move(faces));
+}
+
+AxisGrid AxisGrid::geometric_capped(double lower, double upper,
+                                  double first_width, double max_width, double ratio)
+{
+    validate_extent(NG, lower, upper);
+    if (!std::isfinite(first_width) || !std::isfinite(max_width) ||
+        !std::isfinite(ratio) || first_width <= 0.0 ||
+        max_width < first_width || ratio < 1.0) {
+        throw std::invalid_argument("Invalid capped geometric grid parameters");
+    }
+    std::vector<double> faces{lower};
+    double width = first_width;
+    // upper is a target extent: keep the final cell's full width.
+    while (faces.back() < upper) {
+        const double next = faces.back() + width;
+        faces.push_back(next);
+        // Cap before multiplying to avoid overflow for a large ratio.
+        width = width >= max_width / ratio ? max_width : width * ratio;
+    }
     return AxisGrid(std::move(faces));
 }
 

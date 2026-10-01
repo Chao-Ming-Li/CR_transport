@@ -9,11 +9,9 @@
 #include <omp.h>
 
 int main() {
-    // omp_set_num_threads(10);
-    const Grid2D grid(AxisGrid::linear(1000, 0.0, 200.0),  // kpc
-                      AxisGrid::linear(1000, 0.0, 200.0)); // kpc
-    // const Grid2D grid(AxisGrid::geometric(100, 0.0, 100.0, 1.01),
-    //                   AxisGrid::geometric(100, 0.0, 100.0, 1.01));
+    const Grid2D grid(
+        AxisGrid::geometric_capped(0.0, 200.0, 0.05, 1.0, 1.03),
+        AxisGrid::geometric_capped(0.0, 200.0, 0.01, 1.0, 1.03));
 
     Field2D ndis_C(grid);
     Field2D ndis_H(grid);
