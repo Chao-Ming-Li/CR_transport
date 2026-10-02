@@ -53,7 +53,7 @@ int main() {
             } else {
                 advance_TVD_SSPRK2(old, temp, vr, vz, 0.01, g);
             }
-            advance(unified, vr, vz, 0.01, g, opt);
+            Solver(g, opt).advance(unified, vr, vz, 0.01);
             double error = 0;
             for (std::size_t k = 0; k < old.data.size(); ++k)
                 error = std::max(error, std::abs(old.data[k] - unified.data[k]));
@@ -65,18 +65,20 @@ int main() {
                 for (auto integrator : {TimeIntegrator::Euler, TimeIntegrator::SSPRK2}) {
                     Options opt{reconstruction, limiter, integrator, Splitting::Unsplit};
                     auto n = initial;
-                    for (int k = 0; k < 10; ++k) advance(n, vr, vz, 0.01, g, opt);
+                    Solver solver(g, opt);
+                    for (int k = 0; k < 10; ++k) solver.advance(n, vr, vz, 0.01);
                     require(std::abs(mass(n,g)/mass(initial,g) - 1) < 1e-13,
                             "Closed-boundary mass conservation failed");
                 }
 
         auto n = initial;
-        advance(n, vr, vz, 0.0, g);
+        Solver solver(g);
+        solver.advance(n, vr, vz, 0.0);
         auto expected = initial;
         apply_boundary_conditions(expected, g);
         require(n.data == expected.data, "Zero timestep changed physical density");
         bool rejected = false;
-        try { advance(n, vr, vz, -0.1, g); }
+        try { solver.advance(n, vr, vz, -0.1); }
         catch (const std::invalid_argument&) { rejected = true; }
         require(rejected, "Negative timestep accepted");
         require(n.data == expected.data, "Rejected step modified density");
@@ -89,7 +91,7 @@ int main() {
         outZ(4,5) = 1;
         const auto before = spike.data;
         rejected = false;
-        try { advance(spike, outR, outZ, 10.0, g); }
+        try { solver.advance(spike, outR, outZ, 10.0); }
         catch (const std::runtime_error&) { rejected = true; }
         require(rejected && spike.data == before, "Failed stage was not rejected atomically");
     }

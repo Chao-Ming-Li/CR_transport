@@ -47,7 +47,7 @@ void write_array_to_bin(const std::string& filename, Field2D& arr, const std::si
     // file 在离开作用域时会自动关闭，不需要显式调用 file.close()
 }
 
-void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_H, const Field2D& vR, const Field2D& vZ, const Grid2D& grid) {
+void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_H, const Field2D& vR, const Field2D& vZ, const Grid2D& grid, double D) {
 
     // Gas density is reserved for future interaction/loss terms.
     (void)ndis_H;
@@ -57,10 +57,17 @@ void solve_advection_equation(Field2D& ndis_C, Field2D& ndis_H, const Field2D& v
     options.integrator = cr_advection::TimeIntegrator::SSPRK2;
     options.splitting = cr_advection::Splitting::Unsplit;
 
+    cr_advection::Solver advection(grid, options);
+    cr_diffusion::Options diffusion_options;
+    cr_diffusion::Solver diffusion(grid, D, DT, diffusion_options);
+
     apply_boundary_conditions(ndis_C, grid);
+    // Sequential advection/diffusion is first-order operator splitting.
     for (int t = 0; t < NT; ++t) {
-        cr_advection::advance(ndis_C, vR, vZ, DT, grid, options);
+        advection.advance(ndis_C, vR, vZ, DT);
+        diffusion.advance(ndis_C);
         if (t % 10 == 0)
-            write_array_to_bin("ndis_C_transport_dR50_dz10_r1.03_dt1e4_MC_fix.bin", ndis_C, ndis_C.data.size());
+            write_array_to_bin(D == 0.0 ? "ndis_C_transport_dR50_dz10_r1.03_dt1e4_MC_fix.bin"
+                                      : "ndis_C_advection_diffusion.bin", ndis_C, ndis_C.data.size());
     }
 }

@@ -6,8 +6,24 @@
 #include <stdexcept>
 #include <utility>
 
+namespace {
+
+// Input checks live at solver entry points, outside the numerical sweeps.
+void require(bool condition, const char* message)
+{
+    if (!condition) throw std::invalid_argument(message);
+}
+
+bool finite_nonnegative(double value)
+{
+    return std::isfinite(value) && value >= 0.0;
+}
+
+} // namespace
+
 namespace cr_advection {
 namespace {
+
 
 double limited_slope(double left, double center, double right, Limiter limiter)
 {
@@ -21,7 +37,8 @@ double limited_slope(double left, double center, double right, Limiter limiter)
         case Limiter::MC:
             return std::copysign(std::min(2.0 * small, std::abs(center)), left);
     }
-    throw std::invalid_argument("Unknown slope limiter");
+    // Solver construction has already validated the limiter.
+    throw std::logic_error("Unexpected slope limiter");
 }
 
 // Reconstruct from the upwind cell's volume centroid to the requested face.
@@ -82,13 +99,18 @@ void spatial_operator(Field2D& n, Field2D& rhs, Field2D& fr, Field2D& fz,
 
 } // namespace
 
-void advance(Field2D& density, const Field2D& vR, const Field2D& vZ,
-             double dt, const Grid2D& grid, const Options& opt)
+
+void Solver::advance(Field2D& density, const Field2D& vR, const Field2D& vZ, double dt)
 {
 
-    Field2D stage = density;
-    Field2D rhs(grid), fr(grid, Field2D::Location::RadialFace),
-        fz(grid, Field2D::Location::VerticalFace);
+    if (dt == 0.0) return;
+    const auto& grid = grid_;
+    const auto& opt = options_;
+    auto& stage = stage_;
+    auto& rhs = rhs_;
+    auto& fr = fr_;
+    auto& fz = fz_;
+    stage.data = density.data;
     const auto euler = [&](bool radial, bool vertical) {
         spatial_operator(stage, rhs, fr, fz, vR, vZ, grid, opt, radial, vertical);
         for (int i = 0; i < grid.nR(); ++i)
@@ -108,7 +130,136 @@ void advance(Field2D& density, const Field2D& vR, const Field2D& vZ,
         }
     }
     apply_boundary_conditions(stage, grid);
-    density = std::move(stage);
+    density.data.swap(stage.data);
 }
 
 } // namespace cr_advection
+
+namespace cr_diffusion {
+namespace {
+
+
+// L(n)_k = lower_k (n_{k-1}-n_k) + upper_k (n_{k+1}-n_k).
+// Shared face conductances divided by cell volume ensure conservation.
+struct AxisCoefficients {
+    std::vector<double> lower, upper;
+    explicit AxisCoefficients(int n) : lower(n, 0.0), upper(n, 0.0) {}
+};
+
+AxisCoefficients radial_coefficients(const Grid2D& grid, double D, Boundary outer)
+{
+    AxisCoefficients coefficients(grid.nR());
+    for (int i = 0; i < grid.nR(); ++i) {
+        const double volume = grid.R().center(i) * grid.R().width(i);
+        if (i > 0)
+            coefficients.lower[i] = D * grid.R().face(i)
+                / (volume * grid.radial_centroid_distance(i - 1));
+        if (i + 1 < grid.nR() || outer == Boundary::Absorbing)
+            coefficients.upper[i] = D * grid.R().face(i + 1)
+                / (volume * grid.radial_centroid_distance(i));
+    }
+    return coefficients;
+}
+
+AxisCoefficients vertical_coefficients(const Grid2D& grid, double D, Boundary outer)
+{
+    AxisCoefficients coefficients(grid.nz());
+    for (int j = 0; j < grid.nz(); ++j) {
+        if (j > 0)
+            coefficients.lower[j] = D
+                / (grid.z().width(j) * grid.z().center_distance(j - 1));
+        if (j + 1 < grid.nz() || outer == Boundary::Absorbing)
+            coefficients.upper[j] = D
+                / (grid.z().width(j) * grid.z().center_distance(j));
+    }
+    return coefficients;
+}
+
+} // namespace
+
+Solver::Axis::Axis(int n)
+    : lower(n), upper(n), a(n), cp(n), inverse_pivot(n) {}
+
+void Solver::Axis::factor(double half_dt)
+{
+    for (std::size_t k = 0; k < lower.size(); ++k) {
+        a[k] = -half_dt * lower[k];
+        const double b = 1.0 + half_dt * (lower[k] + upper[k]);
+        const double pivot = b - (k > 0 ? a[k] * cp[k - 1] : 0.0);
+        if (!std::isfinite(pivot) || pivot <= 0.0)
+            throw std::runtime_error("Invalid diffusion tridiagonal pivot");
+        inverse_pivot[k] = 1.0 / pivot;
+        cp[k] = k + 1 < lower.size() ? -half_dt * upper[k] * inverse_pivot[k] : 0.0;
+    }
+}
+
+void Solver::Axis::solve(std::vector<double>& line) const
+{
+    // Forward substitution followed by back substitution, entirely in-place.
+    line[0] *= inverse_pivot[0];
+    for (std::size_t k = 1; k < lower.size(); ++k)
+        line[k] = (line[k] - a[k] * line[k - 1]) * inverse_pivot[k];
+    for (int k = static_cast<int>(lower.size()) - 2; k >= 0; --k)
+        line[k] -= cp[k] * line[k + 1];
+}
+
+Solver::Solver(const Grid2D& grid, double D, double dt, const Options& options)
+    : grid_(grid), options_(options), D_(D), half_dt_(0.5 * dt),
+      radial_(grid.nR()), vertical_(grid.nz()), initial_(grid),
+      intermediate_(grid), result_(grid), line_(std::max(grid.nR(), grid.nz()))
+{
+    if (D == 0.0 || dt == 0.0) return;
+    auto radial = radial_coefficients(grid_, D, options.outer_R);
+    auto vertical = vertical_coefficients(grid_, D, options.upper_z);
+    radial_.lower = std::move(radial.lower);
+    radial_.upper = std::move(radial.upper);
+    vertical_.lower = std::move(vertical.lower);
+    vertical_.upper = std::move(vertical.upper);
+    radial_.factor(half_dt_);
+    vertical_.factor(half_dt_);
+}
+
+void Solver::advance(Field2D& density)
+{
+    if (D_ == 0.0 || half_dt_ == 0.0) return;
+
+    const auto& grid = grid_;
+    const auto& options = options_;
+    const auto& radial = radial_;
+    const auto& vertical = vertical_;
+    const double half_dt = half_dt_;
+    auto& initial = initial_;
+    auto& intermediate = intermediate_;
+    auto& result = result_;
+    initial.data = density.data;
+    apply_boundary_conditions(initial, grid);
+    // Step 1: (I - dt/2 L_R) intermediate = (I + dt/2 L_z) initial.
+    for (int j = 0; j < grid.nz(); ++j) {
+        for (int i = 0; i < grid.nR(); ++i)
+            line_[i] = initial(i, j) + half_dt * (
+                vertical.lower[j] * (initial(i, j - 1) - initial(i, j))
+                + vertical.upper[j] * (initial(i, j + 1) - initial(i, j)));
+        radial.solve(line_);
+        for (int i = 0; i < grid.nR(); ++i) intermediate(i, j) = line_[i];
+    }
+    apply_boundary_conditions(intermediate, grid);
+
+    // Step 2: (I - dt/2 L_z) result = (I + dt/2 L_R) intermediate.
+    for (int i = 0; i < grid.nR(); ++i) {
+        for (int j = 0; j < grid.nz(); ++j)
+            line_[j] = intermediate(i, j) + half_dt * (
+                radial.lower[i] * (intermediate(i - 1, j) - intermediate(i, j))
+                + radial.upper[i] * (intermediate(i + 1, j) - intermediate(i, j)));
+        vertical.solve(line_);
+        for (int j = 0; j < grid.nz(); ++j) {
+            if (!std::isfinite(line_[j]))
+                throw std::runtime_error("Nonfinite diffusion result");
+            result(i, j) = line_[j];
+        }
+    }
+    apply_boundary_conditions(result, grid);
+
+    density.data.swap(result.data);
+}
+
+} // namespace cr_diffusion

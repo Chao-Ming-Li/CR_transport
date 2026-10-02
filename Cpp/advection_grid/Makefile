@@ -40,7 +40,7 @@ $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) $(TARGET) test_grid test_field test_advection test_upwind benchmark_advection test_advection_unified
+	rm -f $(OBJS) $(TARGET) test_grid test_field test_advection test_upwind benchmark_advection test_advection_unified test_diffusion test_solvers
 	@echo "Cleaned build artifacts."
 
 run: $(TARGET)
@@ -111,3 +111,21 @@ test-advection-unified: test_advection_unified
 	./test_advection_unified
 
 .PHONY: test-advection-unified
+
+# Constant-coefficient Crank–Nicolson ADI diffusion checks.
+test_diffusion: test_diffusion.cpp CR_advection.cpp CR_transport_solver.cpp field.cpp $(DEPS)
+	$(CXX) $(CXXFLAGS) test_diffusion.cpp CR_advection.cpp CR_transport_solver.cpp field.cpp -o $@ $(LDFLAGS)
+
+test-diffusion: test_diffusion
+	./test_diffusion
+
+.PHONY: test-diffusion
+
+# Repeated calls through reused objects versus fresh solver instances.
+test_solvers: test_solvers.cpp CR_advection.cpp CR_transport_solver.cpp field.cpp $(DEPS)
+	$(CXX) $(CXXFLAGS) test_solvers.cpp CR_advection.cpp CR_transport_solver.cpp field.cpp -o $@ $(LDFLAGS)
+
+test-solvers: test_solvers
+	./test_solvers
+
+.PHONY: test-solvers
