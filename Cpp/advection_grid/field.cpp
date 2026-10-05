@@ -9,16 +9,12 @@
 
 namespace {
     // Validate that the grid extent is valid for the given number of cells.
-    void validate_extent(int n, double lower, double upper)
-    {
+    void validate_extent(int n, double lower, double upper) {
         if (n < AxisGrid::NG) {
-            throw std::invalid_argument(
-                "AxisGrid requires at least two physical cells");
+            throw std::invalid_argument("AxisGrid requires at least two physical cells");
         }
 
-        if (!std::isfinite(lower) ||
-            !std::isfinite(upper) ||
-            !std::isfinite(upper - lower) ||
+        if (!std::isfinite(lower) || !std::isfinite(upper) || !std::isfinite(upper - lower) ||
             upper <= lower) {
             throw std::invalid_argument("Invalid grid extent");
         }
@@ -26,8 +22,7 @@ namespace {
 
 } // namespace
 
-AxisGrid AxisGrid::linear(int n, double lower, double upper)
-{
+AxisGrid AxisGrid::linear(int n, double lower, double upper) {
     validate_extent(n, lower, upper);
 
     std::vector<double> faces(static_cast<std::size_t>(n) + 1);
@@ -42,13 +37,11 @@ AxisGrid AxisGrid::linear(int n, double lower, double upper)
     return AxisGrid(std::move(faces));
 }
 
-AxisGrid AxisGrid::geometric(int n, double lower, double upper, double ratio)
-{
+AxisGrid AxisGrid::geometric(int n, double lower, double upper, double ratio) {
     validate_extent(n, lower, upper);
 
     if (!std::isfinite(ratio) || ratio <= 0.0) {
-        throw std::invalid_argument(
-            "Geometric width ratio must be positive and finite");
+        throw std::invalid_argument("Geometric width ratio must be positive and finite");
     }
 
     if (ratio == 1.0) {
@@ -64,14 +57,12 @@ AxisGrid AxisGrid::geometric(int n, double lower, double upper, double ratio)
         if (a > 0.0) {
             // Equivalent to (ratio^i - 1)/(ratio^n - 1),
             // arranged to avoid overflowing positive exponentials.
-            fraction =
-                std::exp((static_cast<double>(i) - n) * a) *
-                (-std::expm1(-static_cast<double>(i) * a)) /
-                (-std::expm1(-static_cast<double>(n) * a));
+            fraction = std::exp((static_cast<double>(i) - n) * a) *
+                       (-std::expm1(-static_cast<double>(i) * a)) /
+                       (-std::expm1(-static_cast<double>(n) * a));
         } else {
             fraction =
-                std::expm1(static_cast<double>(i) * a) /
-                std::expm1(static_cast<double>(n) * a);
+                std::expm1(static_cast<double>(i) * a) / std::expm1(static_cast<double>(n) * a);
         }
 
         faces[i] = lower + (upper - lower) * fraction;
@@ -85,13 +76,11 @@ AxisGrid AxisGrid::geometric(int n, double lower, double upper, double ratio)
     return AxisGrid(std::move(faces));
 }
 
-AxisGrid AxisGrid::geometric_capped(double lower, double upper,
-                                  double first_width, double max_width, double ratio)
-{
+AxisGrid AxisGrid::geometric_capped(double lower, double upper, double first_width,
+                                    double max_width, double ratio) {
     validate_extent(NG, lower, upper);
-    if (!std::isfinite(first_width) || !std::isfinite(max_width) ||
-        !std::isfinite(ratio) || first_width <= 0.0 ||
-        max_width < first_width || ratio < 1.0) {
+    if (!std::isfinite(first_width) || !std::isfinite(max_width) || !std::isfinite(ratio) ||
+        first_width <= 0.0 || max_width < first_width || ratio < 1.0) {
         throw std::invalid_argument("Invalid capped geometric grid parameters");
     }
     std::vector<double> faces{lower};
@@ -106,19 +95,16 @@ AxisGrid AxisGrid::geometric_capped(double lower, double upper,
     return AxisGrid(std::move(faces));
 }
 
-AxisGrid AxisGrid::from_faces(std::vector<double> physical_faces)
-{
+AxisGrid AxisGrid::from_faces(std::vector<double> physical_faces) {
     return AxisGrid(std::move(physical_faces));
 }
 
-AxisGrid::AxisGrid(std::vector<double> physical_faces)
-    : n_(0)
-{
+AxisGrid::AxisGrid(std::vector<double> physical_faces) : n_(0) {
     if (physical_faces.size() < static_cast<std::size_t>(NG + 1)) {
         throw std::invalid_argument("Too few grid faces");
     }
 
-    if (physical_faces.size() > 
+    if (physical_faces.size() >
         static_cast<std::size_t>(std::numeric_limits<int>::max() - 2 * NG)) {
         throw std::invalid_argument("Too many grid faces");
     }
@@ -131,8 +117,7 @@ AxisGrid::AxisGrid(std::vector<double> physical_faces)
         }
 
         if (i > 0 && physical_faces[i] <= physical_faces[i - 1]) {
-            throw std::invalid_argument(
-                "Grid faces must be strictly increasing");
+            throw std::invalid_argument("Grid faces must be strictly increasing");
         }
     }
 
@@ -147,13 +132,10 @@ AxisGrid::AxisGrid(std::vector<double> physical_faces)
 
     // Reflect geometry across each domain boundary.
     for (int g = 1; g <= NG; ++g) {
-        faces_[NG - g] =
-            physical_faces.front() -
-            (physical_faces[g] - physical_faces.front());
+        faces_[NG - g] = physical_faces.front() - (physical_faces[g] - physical_faces.front());
 
         faces_[n_ + NG + g] =
-            physical_faces.back() +
-            (physical_faces.back() - physical_faces[n_ - g]);
+            physical_faces.back() + (physical_faces.back() - physical_faces[n_ - g]);
     }
 
     for (int i = -NG; i <= n_ + NG; ++i) {
@@ -183,37 +165,30 @@ AxisGrid::AxisGrid(std::vector<double> physical_faces)
     }
 }
 
-double AxisGrid::face(int i) const
-{
+double AxisGrid::face(int i) const {
     assert(i >= -NG && i <= n_ + NG);
     return faces_[i + NG];
 }
 
-double AxisGrid::center(int i) const
-{
+double AxisGrid::center(int i) const {
     assert(i >= -NG && i < n_ + NG);
     return centers_[i + NG];
 }
 
-double AxisGrid::width(int i) const
-{
+double AxisGrid::width(int i) const {
     assert(i >= -NG && i < n_ + NG);
     return widths_[i + NG];
 }
 
-double AxisGrid::center_distance(int i) const
-{
+double AxisGrid::center_distance(int i) const {
     assert(i >= -NG && i < n_ + NG - 1);
     return center_distances_[i + NG];
 }
 
 Grid2D::Grid2D(AxisGrid radial, AxisGrid vertical)
-    : radial_(std::move(radial)),
-      vertical_(std::move(vertical))
-{
+    : radial_(std::move(radial)), vertical_(std::move(vertical)) {
     if (radial_.face(0) < 0.0) {
-        throw std::invalid_argument(
-            "Physical radial coordinates must be nonnegative");
+        throw std::invalid_argument("Physical radial coordinates must be nonnegative");
     }
     constexpr int ng = AxisGrid::NG;
     radial_centroid_.resize(nR() + 2 * ng);
@@ -230,10 +205,8 @@ Grid2D::Grid2D(AxisGrid radial, AxisGrid vertical)
     // This remains well defined even if an inner ghost cell crosses R=0.
     const double lower = radial_.face(0), upper = radial_.face(nR());
     for (int g = 1; g <= ng; ++g) {
-        radial_centroid_[ng - g] =
-            lower - (radial_centroid_[ng + g - 1] - lower);
-        radial_centroid_[ng + nR() + g - 1] =
-            upper + (upper - radial_centroid_[ng + nR() - g]);
+        radial_centroid_[ng - g] = lower - (radial_centroid_[ng + g - 1] - lower);
+        radial_centroid_[ng + nR() + g - 1] = upper + (upper - radial_centroid_[ng + nR() - g]);
     }
     for (int i = -ng; i < nR() + ng; ++i) {
         const double centroid = radial_centroid_[i + ng];
@@ -251,25 +224,21 @@ Grid2D::Grid2D(AxisGrid radial, AxisGrid vertical)
     }
 }
 
-double Grid2D::volume(int i, int j) const
-{
+double Grid2D::volume(int i, int j) const {
     assert(i >= 0 && i < nR());
     assert(j >= 0 && j < nz());
 
     return vertical_face_area(i) * vertical_.width(j);
 }
 
-double Grid2D::radial_face_area(int i, int j) const
-{
+double Grid2D::radial_face_area(int i, int j) const {
     assert(i >= 0 && i <= nR());
     assert(j >= 0 && j < nz());
 
-    return 2.0 * std::numbers::pi *
-           radial_.face(i) * vertical_.width(j);
+    return 2.0 * std::numbers::pi * radial_.face(i) * vertical_.width(j);
 }
 
-double Grid2D::vertical_face_area(int i) const
-{
+double Grid2D::vertical_face_area(int i) const {
     assert(i >= 0 && i < nR());
 
     const double left = radial_.face(i);
@@ -279,14 +248,12 @@ double Grid2D::vertical_face_area(int i) const
     return std::numbers::pi * (right - left) * (right + left);
 }
 
-double Grid2D::radial_centroid(int i) const
-{
+double Grid2D::radial_centroid(int i) const {
     assert(i >= -AxisGrid::NG && i < nR() + AxisGrid::NG);
     return radial_centroid_[i + AxisGrid::NG];
 }
 
-double Grid2D::radial_centroid_distance(int i) const
-{
+double Grid2D::radial_centroid_distance(int i) const {
     assert(i >= -AxisGrid::NG && i < nR() + AxisGrid::NG - 1);
     return radial_centroid_distance_[i + AxisGrid::NG];
 }

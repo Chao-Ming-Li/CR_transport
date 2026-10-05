@@ -7,14 +7,16 @@
 
 using namespace cr_advection;
 
-void require(bool ok, const char* message) {
-    if (!ok) throw std::runtime_error(message);
+void require(bool ok, const char *message) {
+    if (!ok)
+        throw std::runtime_error(message);
 }
 
-double mass(const Field2D& n, const Grid2D& g) {
+double mass(const Field2D &n, const Grid2D &g) {
     double total = 0;
     for (int i = 0; i < g.nR(); ++i)
-        for (int j = 0; j < g.nz(); ++j) total += n(i,j) * g.volume(i,j);
+        for (int j = 0; j < g.nz(); ++j)
+            total += n(i, j) * g.volume(i, j);
     return total;
 }
 
@@ -26,12 +28,14 @@ int main() {
             vz(g, Field2D::Location::VerticalFace), temp(g);
         for (int i = 0; i < g.nR(); ++i)
             for (int j = 0; j < g.nz(); ++j)
-                initial(i,j) = 1.0 + 0.2 * std::sin(0.4*i) * std::cos(0.3*j);
+                initial(i, j) = 1.0 + 0.2 * std::sin(0.4 * i) * std::cos(0.3 * j);
         // Both velocity signs, with closed boundaries for mass conservation.
         for (int i = 1; i < g.nR(); ++i)
-            for (int j = 0; j < g.nz(); ++j) vr(i,j) = 0.2 * std::cos(0.4*i + 0.3*j);
+            for (int j = 0; j < g.nz(); ++j)
+                vr(i, j) = 0.2 * std::cos(0.4 * i + 0.3 * j);
         for (int i = 0; i < g.nR(); ++i)
-            for (int j = 1; j < g.nz(); ++j) vz(i,j) = 0.2 * std::sin(0.5*i - 0.2*j);
+            for (int j = 1; j < g.nz(); ++j)
+                vz(i, j) = 0.2 * std::sin(0.5 * i - 0.2 * j);
 
         for (int method = 0; method < 4; ++method) {
             Options opt;
@@ -66,8 +70,9 @@ int main() {
                     Options opt{reconstruction, limiter, integrator, Splitting::Unsplit};
                     auto n = initial;
                     Solver solver(g, opt);
-                    for (int k = 0; k < 10; ++k) solver.advance(n, vr, vz, 0.01);
-                    require(std::abs(mass(n,g)/mass(initial,g) - 1) < 1e-13,
+                    for (int k = 0; k < 10; ++k)
+                        solver.advance(n, vr, vz, 0.01);
+                    require(std::abs(mass(n, g) / mass(initial, g) - 1) < 1e-13,
                             "Closed-boundary mass conservation failed");
                 }
 
@@ -78,21 +83,27 @@ int main() {
         apply_boundary_conditions(expected, g);
         require(n.data == expected.data, "Zero timestep changed physical density");
         bool rejected = false;
-        try { solver.advance(n, vr, vz, -0.1); }
-        catch (const std::invalid_argument&) { rejected = true; }
+        try {
+            solver.advance(n, vr, vz, -0.1);
+        } catch (const std::invalid_argument &) {
+            rejected = true;
+        }
         require(rejected, "Negative timestep accepted");
         require(n.data == expected.data, "Rejected step modified density");
 
         // Excessive combined outflow must fail without partially updating n.
         Field2D spike(g), outR(g, Field2D::Location::RadialFace),
             outZ(g, Field2D::Location::VerticalFace);
-        spike(4,4) = 1;
-        outR(5,4) = 1;
-        outZ(4,5) = 1;
+        spike(4, 4) = 1;
+        outR(5, 4) = 1;
+        outZ(4, 5) = 1;
         const auto before = spike.data;
         rejected = false;
-        try { solver.advance(spike, outR, outZ, 10.0); }
-        catch (const std::runtime_error&) { rejected = true; }
+        try {
+            solver.advance(spike, outR, outZ, 10.0);
+        } catch (const std::runtime_error &) {
+            rejected = true;
+        }
         require(rejected && spike.data == before, "Failed stage was not rejected atomically");
     }
     std::cout << "Unified advection: legacy agreement, all limiter/integrator combinations,\n"

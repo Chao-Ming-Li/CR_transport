@@ -1,149 +1,131 @@
-# Cosmic-ray transport in the Galactic circumgalactic medium
+# Cosmic-ray transport: research and code reference
 
-Implementation review: 2026-10-02. This document describes the current working-tree sources, including uncommitted changes. “Implemented” below refers to code present in the sources; it does not imply that the current executable builds or that all numerical properties have been verified.
+Reviewed against working-tree sources on **2026-10-05**. This describes the source code, not a validated executable: the production build currently has a missing advection constructor.
 
-## Physical motivation and intended model
+## Scope and physical model
 
-The goal is to develop a C++ cosmic-ray (CR) transport code for the Milky Way disk and its extended circumgalactic medium (CGM). The intended domain extends from disk scales to hundreds of kiloparsecs. Compared with the conventional tens-of-kpc domains motivating this project, the intended improvement is the ability to resolve the disk while following transport into the CGM. Quantitative comparisons with GALPROP and DRAGON2 remain future work.
+Goal: model cosmic-ray transport from the Milky Way disk into the circumgalactic medium, extending to hundreds of kpc while retaining fine disk resolution. Comparisons with GALPROP/DRAGON2 are future work.
 
-The schematic target equation for phase-space distribution of species i is
+Currently, one scalar density field evolves by spatial advection and constant isotropic diffusion in axisymmetric cylindrical coordinates:
 
-$$
-\frac{\partial f_i}{\partial t}
-= \nabla_r\cdot(D_{rr}\nabla_r f_i-\mathbf{v}_r f_i)
-+ \nabla_p\cdot(D_{pp}\nabla_p f_i-\mathbf{v}_p f_i)
-+ Q_i
-+ \sum_{j\ne i}\frac{f_j}{\tau_{j\to i}}
-- \frac{f_i}{\tau_i}.
-$$
-
-The intended physics includes spatial diffusion and advection, momentum diffusion/reacceleration, continuous energy losses, nuclear fragmentation, and radioactive decay. This is a target equation, not the equation currently solved in full.
-
-Currently we have not considered the energy dependence, and are still implementing the spatial transport: diffusion, advection...
 $$
 \frac{\partial n}{\partial t}
-= -\frac{1}{R}\frac{\partial(Rv_Rn)}{\partial R}
-  -\frac{\partial(v_zn)}{\partial z}
-  +\frac{1}{R}\frac{\partial}{\partial R}
-    \left(RD\frac{\partial n}{\partial R}\right)
-  +\frac{\partial}{\partial z}\left(D\frac{\partial n}{\partial z}\right).
+= -\frac{1}{R}\frac{\partial(Rv_R n)}{\partial R}
+  -\frac{\partial(v_z n)}{\partial z}
+  +\frac{1}{R}\frac{\partial}{\partial R}\left(RD\frac{\partial n}{\partial R}\right)
+  +D\frac{\partial^2 n}{\partial z^2}.
 $$
 
-Here D is a constant isotropic scalar. Length and time units are kpc and yr; velocity and diffusion units are kpc/yr and kpc^2/yr. The normalization and physical units of n are not yet specified.
+Units: length **kpc**, time **yr**, velocity **kpc/yr**, diffusion coefficient **kpc²/yr**. Density/source normalization remains undefined. There is no energy or species dimension, continuous injection, reaction network, or loss term in the current transport loop.
 
-## Geometry, grids, and field storage
+## Code map
 
-Implemented in `field.hpp` and `field.cpp`:
-
-- Axisymmetric cylindrical R-z geometry, with no azimuthal dependence. The production setup covers positive R and z with boundary faces at R=0 and z=0; the latter assumes midplane symmetry.
-- `AxisGrid::linear`: uniform widths with an exact requested endpoint.
-- `AxisGrid::geometric`: a fixed cell count and successive-width ratio, with exact requested endpoints; ratio=1 reduces to a linear grid.
-- `AxisGrid::geometric_capped`: widths grow from an initial width, then remain at a maximum width. The upper coordinate is a target: the last cell retains its full width, so the actual boundary can exceed the target by at most the maximum width, up to rounding. This design aims to identify the tiny structures on the disk as well as control the numerical diffusion close to the outer boundary.
-- `AxisGrid::from_faces`: explicitly supplied strictly increasing physical faces.
-- Two ghost-cell layers per axis; ghost geometry is reflected across the boundary faces.
-- `Grid2D` provides annular volumes, radial/vertical face areas, and cached radial volume centroids and centroid distances. The arithmetic radial center used in volume factors differs from the volume centroid used in reconstruction.
-- `Field2D` stores density at `Centroid`, vR at `RadialFace`, and vZ at `VerticalFace`. Storage is contiguous, includes ghosts, and has z as the fastest-varying index. Location/dimension checks are available through `matches`.
-
-For cell faces R_- and R_+, the volume is
-
-$$V_{ij}=\pi(R_+^2-R_-^2)\Delta z_j.$$
-
-The conservative radial denominator `R.center(i) * R.width(i)` equals (R_+^2-R_-^2)/2. Thus the implemented flux differences account for cylindrical geometry even on nonuniform grids. A mass diagnostic must use sum(n_ij V_ij) over physical cells only. The grid volume includes the full 2pi azimuth but only the modeled positive-z half; a symmetric full-domain integral requires the corresponding factor of two.
-
-## Boundary conditions
-
-`apply_boundary_conditions` in `CR_transport_solver.cpp` sets reflective boundary at R = 0 and z = 0, and absorbing boundary at $\rm R_{max}$ and $z_{max}$. The assumption is that the spatial distribution is central symmetric and there is no net flux accross inner boundaries. While when $\rm R_{max}$ and $z_{max}$ get large enough, they do not affect the results any more.
-
-
-## Spatial advection
-
-The active implementation is `cr_advection::Solver` in `CR_advection.hpp` and `CR_advection.cpp`.
-
-- Constant reconstruction gives first-order upwind spatial fluxes.
-- PLM reconstructs a linear profile from neighboring densities using actual radial volume-centroid or vertical-center distances.
-- Available slope limiters are Minmod, Van Leer, and Monotonized Central (MC). Reconstructed face states are clamped between the donor and adjacent cell averages; this is a face-state bound, not clipping of evolved cell averages.
-- Face states are selected by velocity sign. Each shared face flux is computed once per spatial-operator evaluation.
-- `Unsplit` updates both spatial directions together, using Euler or SSPRK2. SSPRK2 uses two Euler stages and their convex combination.
-- `RadialThenVertical` performs sequential Euler directional updates in the present implementation; the header describes this combination as Euler-only.
-- Velocities are held fixed over an advance call. Reusable stage, RHS, and flux fields belong to the solver object.
-
-The production wrapper selects PLM + MC + unsplit SSPRK2; the default `Options` limiter is Van Leer. `PPM` exists as an enum value, but no separate PPM reconstruction is implemented: the current face-value routine treats every non-Constant choice as linear reconstruction. Do not describe PPM as an available implemented method.
-
-There is no automatic CFL calculation, rejection, or substepping in the current `advance` implementation. The caller must choose a stable dt on the actual grid. Face-state limiting alone does not guarantee nonnegative updated cell averages for an arbitrary timestep. Claimed global spatial order, positivity limits, and convergence rates require validation for this version.
-
-## Spatial diffusion
-
-`cr_diffusion::Solver` is implemented in the same active header/source pair. It solves constant-coefficient isotropic diffusion with the Peaceman–Rachford Crank–Nicolson ADI scheme:
-
-$$
-(I-\tfrac{\Delta t}{2}L_R)n^*
-=(I+\tfrac{\Delta t}{2}L_z)n^k,
-$$
-
-$$
-(I-\tfrac{\Delta t}{2}L_z)n^{k+1}
-=(I+\tfrac{\Delta t}{2}L_R)n^*.
-$$
-
-Directional coefficients use shared face conductances divided by cell volume, with radial centroid distances and vertical center distances. The tridiagonal systems use cached Thomas factors. Grid, D, timestep, and boundary options are fixed at construction; construct a new solver when these change. Working fields and line storage are reused.
-
-D=0 or dt=0 disables the diffusion update. The method is designed to be second order in time for the fixed linear operator, but Crank–Nicolson does not preserve positivity at arbitrary large timesteps. Signed results are retained; final physical-cell results are checked for finiteness. Spatially varying or anisotropic diffusion is not implemented.
-
-## Current driver and initial conditions
-
-`main.cpp`, `initialization.cpp`, and `CR_transport_solver.cpp` define a transport demonstration:
-
-| Quantity | Current setting |
+| Files | Responsibility |
 | --- | --- |
-| R grid | Target [0,200] kpc; first width 0.05 kpc; maximum width 1 kpc; growth ratio 1.03 |
-| z grid | Target [0,200] kpc; first width 0.01 kpc; maximum width 1 kpc; growth ratio 1.03 |
-| Initial CR density | exp[-(R_centroid-30)^2/9-(z_center-30)^2/9] multiplied by DT |
-| Wind | vR=vZ=3e-7 kpc/yr away from the lower reflecting faces |
-| Gas | Uniform `ndis_H=0.001`; unused by the current transport update |
-| Timestep / step count | DT=10000 yr; NT=10000; total requested evolution 1e8 yr |
-| Diffusion | Default D=0 in the wrapper; `main.cpp` does not override it |
+| `field.hpp`, `field.cpp` | Grid geometry, ghost coordinates, field storage |
+| `CR_advection.hpp`, `CR_advection.cpp` | Advection and diffusion solver classes |
+| `CR_transport_solver.cpp` | Boundary filling, timestep checks, evolution loop, binary output |
+| `main.cpp`, `initialization.cpp`, `initialization.hpp` | Demonstration grid, initial density, wind, gas, DT/NT |
+| `cross_section.hpp` | Isotope metadata and fixed cross-section table; unused by transport |
+| `Makefile`, `test_*.cpp` | Build targets and numerical tests; some dependencies are stale |
 
-`initialize_CR_source` assigns an initial Gaussian once. Despite its name, it does not supply continuous injection Q during evolution. Its DT-dependent amplitude is a demonstration convention, not a documented physical source normalization. `ndis_C` is a single scalar field, not a completed carbon-isotope transport model.
+## Grid and boundaries
 
-The driver performs advection(dt), then diffusion(dt) each iteration. This is first-order operator splitting when both processes are active, even though the individual SSPRK2 and ADI integrators are second order in time. The unsplit advection option refers only to combining R and z within advection. There is no Strang composition of advection and diffusion in the current driver.
+- Domain: positive R and z; z=0 represents midplane symmetry.
+- Grid choices: uniform (`linear`), geometric with fixed cell count (`geometric`), capped geometric widths (`geometric_capped`), or explicit faces (`from_faces`).
+- Capped grids retain the last full cell: the actual upper boundary may exceed the requested target by up to the maximum width, within rounding.
+- Density is a cell average stored at `Centroid`; velocities are stored at `RadialFace` and `VerticalFace`. Two ghost layers surround each axis; z is the fastest storage index.
+- Radial reconstruction uses volume centroids; flux denominators use the arithmetic radial center times cell width. These are distinct coordinates.
+- Lower boundaries: reflected density ghosts and explicitly zero flux. Outer R and upper z boundaries: zero-density ghosts (absorbing). Boundary influence must be checked by enlarging the domain.
 
-After the first update and every ten iterations thereafter, output appends the entire density storage, including ghost cells, as native binary doubles. With D=0 the filename is `ndis_C_transport_dR50_dz10_r1.03_dt1e4_MC_fix.bin`; otherwise it is `ndis_C_advection_diffusion.bin`. There is no embedded grid/time metadata or initial-state record, and an existing file is appended to on a repeated run.
+Particle-number diagnostics must sum **physical cells only**:
 
-## Nuclear data and unimplemented physics
+$$
+N=\sum_{ij}n_{ij}V_{ij},\qquad
+V_{ij}=\pi(R_{i+1}^2-R_i^2)\Delta z_j.
+$$
 
-`cross_section.hpp` contains isotope metadata and a fixed 10-by-10 cross-section table for O16, N15, N14, C13, C12, B11, B10, Be10, Be9, and Be7. The network data start from O16. The table convention is `sigma[parent][daughter]`: diagonal entries represent total inelastic destruction and off-diagonal entries partial fragmentation. Values are in cm^2; comments attribute them to DRAGON2 values converted from mb.
+Volumes include the full azimuth but only positive z; a symmetric full-domain integral is twice this value.
 
-The header also defines unit/physical constants, including a default helium enhancement factor. It does not currently implement reaction-rate functions, energy-dependent cross sections, decay lifetimes, or a reaction solver. The table is not connected to the production transport loop. Its energy applicability and precise provenance remain to be documented.
+## Numerical methods
 
-Pending physics:
+**Advection.** Production options are **PLM + MC limiter + unsplit SSPRK2**. PLM uses actual centroid/center distances and clamps reconstructed face states between adjacent cell averages. Velocity sign selects the donor cell; each shared face flux is computed once per stage. Evolved densities are not clipped.
 
-- Momentum/energy grid and variable convention, momentum diffusion, and continuous losses (including a defined treatment of wind-related adiabatic changes).
-- Coupled fragmentation production/destruction, radioactive decay, and the associated rate/unit conversions.
-- Hadronic/pion-production losses with an explicit distinction between continuous losses and catastrophic removal.
-- Physically normalized injection, disk/CGM gas profiles, and species-dependent transport where needed.
+Other options: constant reconstruction (first-order upwind), Minmod/Van Leer limiters, Euler integration, and sequential `RadialThenVertical` Euler sweeps. The default limiter in `Options` is Van Leer, overridden to MC by the wrapper. Velocities remain fixed; there is no automatic timestep selection or substepping.
 
-## Build and validation status
+**Diffusion.** Peaceman–Rachford Crank–Nicolson ADI alternates implicit and explicit directions:
 
-The Makefile's production source list is `main.cpp`, `CR_advection.cpp`, `CR_transport_solver.cpp`, `field.cpp`, and `initialization.cpp`, using C++20 and Homebrew LLVM/libomp. Legacy files such as `CR_advection_old.cpp` and `CR_advection_RK.cpp` are not part of that target. OpenMP headers/build flags are present, but the active transport sweeps currently contain no OpenMP parallel directives.
+$$
+(I-\tfrac{\Delta t}{2}L_R)n^*=(I+\tfrac{\Delta t}{2}L_z)n^k,
+\qquad
+(I-\tfrac{\Delta t}{2}L_z)n^{k+1}=(I+\tfrac{\Delta t}{2}L_R)n^*.
+$$
 
-A fresh compile/link of those five production sources on 2026-10-02 failed: `cr_advection::Solver::Solver(const Grid2D&, const Options&)` is declared and called but has no definition in the current active sources. Consequently this snapshot is not a buildable production solver. The unused `require` and `finite_nonnegative` helpers also show that header claims of input validation are not currently realized: advection `advance` lacks dimension/timestep validation, and the diffusion constructor lacks its advertised finite/nonnegative D and dt checks. These are implementation gaps, not completed guarantees.
+Coefficients use face conductances divided by cell volume, with radial centroid distances and vertical center distances. Thomas factors and working storage are reused. Grid, D, timestep, and boundary options are fixed at construction. D=0 disables diffusion. Variable/anisotropic D is not implemented.
 
-Existing validation sources include:
+**Combined update.** Each iteration applies advection(Δt), then diffusion(Δt): **first-order operator splitting** when both are active. Individual second-order time integrators do not make this composition second order. “Unsplit” refers to R/z advection only.
 
-- `test_grid.cpp`: grid construction, ghost geometry, cylindrical volumes/areas, cached centroids, and invalid inputs.
-- `test_diffusion.cpp`: nonuniform-grid conservation, constant preservation, discrete-mode amplification, temporal refinement, absorbing boundaries, and validation expectations.
-- `test_solvers.cpp`: reused-versus-fresh solver results and validation/no-op expectations.
-- `test_upwind.cpp`: conservative upwind transport, both velocity signs, positivity examples, and CFL/validation expectations.
-- Advection benchmarks/comparisons: additional historical tests and measurements, whose interfaces must be reconciled with the active solver.
+## Timestep checks
 
-These are test intentions, not a report that the current snapshot passes. Several tests expect validation/CFL behavior missing from the current implementation. Some Makefile test targets reference absent `grid.cpp` or `CR_advection_unified.cpp`; `test_advection_unified.cpp` also includes an absent `CR_advection_unified.hpp`. Existing executables or object files are not evidence for the current sources.
+`solve_advection_equation` checks once before evolution because grid, velocities, D, and DT remain fixed.
 
-`NUMERICS.md`, `ADVECTION_UNIFIED.md`, and the comparison documents describe earlier variants. For example, `NUMERICS.md` describes quadratic reconstruction and automatic CFL substeps that are absent from the current active source. Historical benchmark results must not be attributed to this version without rerunning compatible tests.
+**Advection:** reject the timestep if
 
-## Next development priorities
+$$
+C_{\rm adv}=\Delta t\max_{ij}
+\left[\frac{\sum_{\text{outgoing faces}}A_f|v_f|}{V_{ij}}\right]>0.5.
+$$
 
-1. Restore the advection constructor and reconcile actual input validation, supported options, and CFL handling with the public contract.
-2. Repair test/build dependencies and run fresh tests of the active implementation; establish conservation, boundary flux balance, positivity under stated timestep limits, and spatial/time convergence.
-3. Specify the density/source normalization and output metadata; distinguish numerical Gaussian demonstrations from physical disk/CGM simulations.
-4. If second-order combined transport is required, implement and verify a suitable symmetric operator composition. Do not infer overall order from the individual integrators.
-5. Define momentum/species variables and reaction data conventions, then integrate the missing physical processes with isolated tests before full coupled runs.
+Both directions contribute; reflecting faces are excluded. This is a velocity-based outgoing fraction, not the actual particle fraction, which also depends on reconstructed face density. The code intends 0.5 as a conservative PLM positivity bound. However, face states are clamped to adjacent averages, not explicitly to twice the donor density; a general positivity guarantee on arbitrary stretched grids still needs verification.
+
+**Diffusion:** warn, but continue, if
+
+$$
+\frac{\Delta t}{2}\max\left[\max_i(a_{R,i}+b_{R,i}),\max_j(a_{z,j}+b_{z,j})\right]>1.
+$$
+
+Here a and b are the nonnegative lower/upper neighbor diffusion coefficients, including absorbing-boundary contributions. Within the bound, each explicit half-step has nonnegative weights and the implicit solves preserve nonnegativity, provided input/boundary densities are nonnegative and D≥0. Exceeding it can cause negative densities; it is not an explicit diffusion stability limit.
+
+For uniform Cartesian cells, this ADI positivity bound reduces to **Δt ≤ min(ΔR², Δz²)/D**. The code uses cylindrical, nonuniform-grid coefficients instead.
+
+## Current demonstration
+
+| Setting | Value |
+| --- | --- |
+| R grid | Target 0–200 kpc; first width 0.05 kpc; maximum 1 kpc; ratio 1.03 |
+| z grid | Target 0–200 kpc; first width 0.01 kpc; maximum 1 kpc; ratio 1.03 |
+| Initial density | DT × exp[−(R_centroid−30)²/9 − (z_center−30)²/9] |
+| Wind | vR=vZ=3×10⁻⁷ kpc/yr; lower-face velocities zero |
+| Gas | Uniform `ndis_H=0.001`; unused in evolution |
+| Time | DT=10⁴ yr; NT=10⁴; requested duration 10⁸ yr |
+| Diffusion | D=0 by default; `main.cpp` uses this default |
+
+`initialize_CR_source` initializes the Gaussian once; it is not continuous injection. Its DT-dependent amplitude is a demonstration convention. `ndis_C` is not yet a coupled carbon-isotope model.
+
+Output follows updates 1, 11, 21, … and appends **all storage, including ghosts**, as native binary doubles:
+
+- D=0: `ndis_C_transport_dR50_dz10_r1.03_dt1e4_MC_fix.bin`
+- D≠0: `ndis_C_advection_diffusion.bin`
+
+There is no initial-state record or grid/time metadata. Repeated runs append to existing files.
+
+## Nuclear data and remaining physics
+
+`cross_section.hpp` lists O16, N15, N14, C13, C12, B11, B10, Be10, Be9, and Be7. Its fixed 10×10 table uses `sigma[parent][daughter]`: diagonal entries are total inelastic destruction; off-diagonal entries are fragmentation production. Values are in cm²; comments attribute them to DRAGON2 values converted from mb. Energy applicability and precise provenance remain undocumented.
+
+Constants include a helium enhancement factor of 1.3. Despite the header's introductory rate comment, no reaction-rate functions, decay lifetimes, or reaction solver are implemented.
+
+Remaining physics: normalized injection and disk/CGM gas profiles; momentum/energy variables; reacceleration and continuous/adiabatic losses; fragmentation and decay; hadronic losses with a defined continuous-versus-catastrophic treatment.
+
+## Build status and next steps
+
+Production uses C++20 and Homebrew LLVM/libomp, compiling the five source files listed in `Makefile`. Legacy advection variants are excluded. Active transport sweeps have no OpenMP parallel directives.
+
+Known gaps in the current sources:
+
+1. **Build blocker:** `cr_advection::Solver` declares a constructor but has no definition. The production link failed on 2026-10-05.
+2. **Input validation:** advection `advance` lacks the advertised dimension/timestep checks; diffusion construction lacks finite/nonnegative D and dt checks. The wrapper's current CFL scan also lacks dimension/finite-input checks before accessing velocities. `require` and `finite_nonnegative` helpers are unused.
+3. **Test dependencies:** some targets reference absent `grid.cpp`, `CR_advection_unified.cpp`, or `CR_advection_unified.hpp`. Existing binaries do not establish that current sources pass.
+4. **Historical notes:** `NUMERICS.md`, `ADVECTION_UNIFIED.md`, and comparison documents describe earlier variants. Quadratic reconstruction and automatic CFL substeps described there are absent from active code.
+
+Priority: restore the constructor and input checks; repair test targets; run fresh conservation, boundary-flux, positivity, and convergence tests. Existing grid/diffusion/reuse/upwind tests provide starting points, not a current pass report. Then define normalization/output metadata, decide whether second-order combined transport is needed, and add the missing physics incrementally.
