@@ -17,10 +17,11 @@ int main() {
     Field2D vR(grid, Field2D::Location::RadialFace);
     Field2D vZ(grid, Field2D::Location::VerticalFace);
 
+    double D = 2e-7; // Diffusion coefficient in kpc^2/yr
     initialize_gas(ndis_H, 0.001, grid);
     initialize_wind_velocity(vR, vZ, grid);
     initialize_CR_source(ndis_C, grid);
-    solve_advection_equation(ndis_C, ndis_H, vR, vZ, grid);
+    solve_transport_equation(ndis_C, ndis_H, vR, vZ, D, grid);
 
     return 0;
 }

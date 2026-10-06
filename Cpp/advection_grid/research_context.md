@@ -51,7 +51,7 @@ Volumes include the full azimuth but only positive z; a symmetric full-domain in
 
 **Advection.** Production options are **PLM + MC limiter + unsplit SSPRK2**. PLM uses actual centroid/center distances and clamps reconstructed face states between adjacent cell averages. Velocity sign selects the donor cell; each shared face flux is computed once per stage. Evolved densities are not clipped.
 
-Other options: constant reconstruction (first-order upwind), Minmod/Van Leer limiters, Euler integration, and sequential `RadialThenVertical` Euler sweeps. The default limiter in `Options` is Van Leer, overridden to MC by the wrapper. Velocities remain fixed; there is no automatic timestep selection or substepping.
+Other options: constant reconstruction (first-order upwind), Minmod/Van Leer limiters, Euler integration, and sequential `RadialThenVertical` Euler sweeps. The default limiter in `Options` is Van Leer, overridden to MC by the wrapper. The advection constructor copies vR/vZ and stores a fixed timestep; `advance(density)` reuses them. Construct a new solver to change these inputs. There is no automatic timestep selection or substepping.
 
 **Diffusion.** Peaceman–Rachford Crank–Nicolson ADI alternates implicit and explicit directions:
 
@@ -61,7 +61,7 @@ $$
 (I-\tfrac{\Delta t}{2}L_z)n^{k+1}=(I+\tfrac{\Delta t}{2}L_R)n^*.
 $$
 
-Coefficients use face conductances divided by cell volume, with radial centroid distances and vertical center distances. Thomas factors and working storage are reused. Grid, D, timestep, and boundary options are fixed at construction. D=0 disables diffusion. Variable/anisotropic D is not implemented.
+Coefficients use face conductances divided by cell volume, with radial centroid distances and vertical center distances. Thomas factors and working storage are reused. Grid, D, and timestep are fixed at construction; lower boundaries reflect and outer boundaries absorb. D=0 disables diffusion. Variable/anisotropic D is not implemented.
 
 **Combined update.** Each iteration applies advection(Δt), then diffusion(Δt): **first-order operator splitting** when both are active. Individual second-order time integrators do not make this composition second order. “Unsplit” refers to R/z advection only.
 

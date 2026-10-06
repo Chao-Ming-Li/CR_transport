@@ -14,12 +14,12 @@ namespace {
 
 void initialize_CR_source(Field2D &ndis, const Grid2D &grid) {
     validate_grid_size(ndis, grid);
-    // Gaussian centered at (R, z) = (30, 30) kpc, as in the original model.
+    // Gaussian centered at (R, z) = (10, 10) kpc, as in the original model.
     // Ghost cells are left unchanged.
     for (int i = 0; i < grid.nR(); ++i) {
-        const double R1 = grid.radial_centroid(i) - 30.0;
+        const double R1 = grid.radial_centroid(i) - 10.0;
         for (int j = 0; j < grid.nz(); ++j) {
-            const double Z1 = grid.z().center(j) - 30.0;
+            const double Z1 = grid.z().center(j) - 10.0;
             ndis(i, j) = std::exp(-R1 * R1 / 9.0 - Z1 * Z1 / 9.0) * DT;
         }
     }
@@ -44,14 +44,14 @@ void initialize_wind_velocity(Field2D &vR, Field2D &vZ, const Grid2D &grid) {
     for (int i = 0; i < vR.nR(); ++i)
         for (int j = 0; j < vR.nz(); ++j)
             // vR(i, j) = a * grid.R().face(i);
-            vR(i, j) = i == 0 ? 0.0 : 3e-7; // kpc / yr
-                                            // vR(i, j) = 0.0;
+            vR(i, j) = i == 0 ? 0.0 : 3e-7; // kpc / yr, equivalent to 300 km/s
+                                            // vR(i, j) = 0.0;  
 
     for (int i = 0; i < vZ.nR(); ++i)
         for (int j = 0; j < vZ.nz(); ++j)
             // vZ(i, j) = b * (grid.radial_centroid(i) / Rstar)
             //             * grid.z().face(j);
-            vZ(i, j) = j == 0 ? 0.0 : 3e-7; // kpc / yr
+            vZ(i, j) = j == 0 ? 0.0 : 3e-7; // kpc / yr, equivalent to 300 km/s
                                             // vZ(i, j) = 0.0;
 }
 

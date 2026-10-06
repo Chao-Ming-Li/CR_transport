@@ -47,18 +47,16 @@ void write_array_to_bin(const std::string &filename, Field2D &arr, const std::si
     // file 在离开作用域时会自动关闭，不需要显式调用 file.close()
 }
 
-void solve_advection_equation(Field2D &ndis_C, Field2D &ndis_H, const Field2D &vR,
-                              const Field2D &vZ, const Grid2D &grid, double D) {
+void solve_transport_equation(Field2D &ndis_C, Field2D &ndis_H, const Field2D &vR,
+                              const Field2D &vZ, double D, const Grid2D &grid) {
 
     double max_advection_rate = 0.0;
     double max_diffusion_rate = 0.0;
     for (int i = 0; i < grid.nR(); ++i) {
         const double radial_volume = grid.R().center(i) * grid.R().width(i);
         const double diffusion_R =
-            D *
-            ((i > 0 ? grid.R().face(i) / grid.radial_centroid_distance(i - 1) : 0.0) +
-             grid.R().face(i + 1) / grid.radial_centroid_distance(i)) /
-            radial_volume;
+            D *((i > 0 ? grid.R().face(i) / grid.radial_centroid_distance(i - 1) : 0.0) +
+            grid.R().face(i + 1) / grid.radial_centroid_distance(i)) / radial_volume;
         for (int j = 0; j < grid.nz(); ++j) {
             // Lower boundaries reflect: their velocities do not contribute flux.
             const double vr_lower = i > 0 ? vR(i, j) : 0.0;
@@ -96,24 +94,25 @@ void solve_advection_equation(Field2D &ndis_C, Field2D &ndis_H, const Field2D &v
 
     // Gas density is reserved for future interaction/loss terms.
     (void)ndis_H;
+
+    // Construct advection and diffusion solvers with the same grid snapshot.
     cr_advection::Options options;
     options.reconstruction = cr_advection::Reconstruction::PLM;
     options.limiter = cr_advection::Limiter::MC;
     options.integrator = cr_advection::TimeIntegrator::SSPRK2;
     options.splitting = cr_advection::Splitting::Unsplit;
 
-    cr_advection::Solver advection(grid, options);
-    cr_diffusion::Options diffusion_options;
-    cr_diffusion::Solver diffusion(grid, D, DT, diffusion_options);
+    cr_advection::Solver advection(grid, vR, vZ, DT, options);
+    cr_diffusion::Solver diffusion(grid, D, DT);
 
     apply_boundary_conditions(ndis_C, grid);
     // Sequential advection/diffusion is first-order operator splitting.
     for (int t = 0; t < NT; ++t) {
-        advection.advance(ndis_C, vR, vZ, DT);
+        advection.advance(ndis_C);
         diffusion.advance(ndis_C);
         if (t % 10 == 0)
-            write_array_to_bin(D == 0.0 ? "ndis_C_transport_dR50_dz10_r1.03_dt1e4_MC_fix.bin"
-                                        : "ndis_C_advection_diffusion.bin",
+            write_array_to_bin(D == 0.0 ? "ndis_C_advection_dR50_dz10_r1.03_dt1e4_v300_D3e28.bin"
+                                        : "ndis_C_transport_dR50_dz10_r1.03_dt1e4_v300_D3e28.bin",
                                ndis_C, ndis_C.data.size());
     }
 }

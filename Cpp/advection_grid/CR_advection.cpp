@@ -6,12 +6,24 @@
 #include <stdexcept>
 #include <utility>
 
-
 namespace cr_advection {
 
-    Solver::Solver(const Grid2D &grid, const Options &options)
-        : grid_(grid), options_(options), stage_(grid), rhs_(grid),
-          fr_(grid, Field2D::Location::RadialFace), fz_(grid, Field2D::Location::VerticalFace) {}
+    Solver::Solver(const Grid2D &grid, const Field2D &vR, const Field2D &vZ, double dt,
+                   const Options &options)
+        : grid_(grid), options_(options), vR_(vR), vZ_(vZ), dt_(dt), stage_(grid), rhs_(grid),
+          fr_(grid, Field2D::Location::RadialFace), fz_(grid, Field2D::Location::VerticalFace) {
+        if (!vR.matches(grid, Field2D::Location::RadialFace) ||
+            !vZ.matches(grid, Field2D::Location::VerticalFace))
+            throw std::invalid_argument("Advection velocities must match the grid");
+        if (!std::isfinite(dt) || dt < 0.0)
+            throw std::invalid_argument("Advection timestep must be finite and nonnegative");
+        for (double v : vR_.data)
+            if (!std::isfinite(v))
+                throw std::invalid_argument("Radial velocity must be finite");
+        for (double v : vZ_.data)
+            if (!std::isfinite(v))
+                throw std::invalid_argument("Vertical velocity must be finite");
+    }
 
     namespace {
 
@@ -50,13 +62,18 @@ namespace cr_advection {
             const double sr = (value(cell + 1) - value(cell)) / dr;
             const double sc = (value(cell + 1) - value(cell - 1)) / (dl + dr);
             const double xf = radial ? g.R().face(face) : g.z().face(face); // face coordinate
-            const double reconstructed = value(cell) + limited_slope(sl, sc, sr, opt.limiter) *
-                    (xf - coordinate(cell)); // linear reconstruction from the cell centroid to the face
+            const double reconstructed =
+                value(cell) +
+                limited_slope(sl, sc, sr, opt.limiter) *
+                    (xf -
+                     coordinate(cell)); // linear reconstruction from the cell centroid to the face
 
             // Keep the face state between its adjacent cell averages. Near a steep
             // drop, roundoff in the coordinates can otherwise make it slightly negative.
             const double neighbor = value(cell + (velocity >= 0 ? 1 : -1));
-            return std::clamp(reconstructed, std::min(value(cell), neighbor), std::max(value(cell),
+            return std::clamp(
+                reconstructed, std::min(value(cell), neighbor),
+                std::max(value(cell),
                          neighbor)); // std::clamp(x, lower, upper) keeps x within [lower, upper]
         }
 
@@ -66,9 +83,12 @@ namespace cr_advection {
                               bool vertical) {
             apply_boundary_conditions(n, g);
             if (radial) {
-                for (int i = 1; i <= g.nR(); ++i) // radial faces are indexed 1..nR, excluding Rf[0] because flux is zero at the inner boundary, including the Rf[nR] face.
+                for (
+                    int i = 1; i <= g.nR();
+                    ++i) // radial faces are indexed 1..nR, excluding Rf[0] because flux is zero at the inner boundary, including the Rf[nR] face.
                     for (int j = 0; j < g.nz(); ++j) // vertical indexes of radial faces are 0..nz-1
-                        fr(i, j) = g.R().face(i) * vr(i, j) * face_value(n, g, opt, true, i, j, vr(i, j));
+                        fr(i, j) =
+                            g.R().face(i) * vr(i, j) * face_value(n, g, opt, true, i, j, vr(i, j));
             }
             if (vertical) {
                 for (int i = 0; i < g.nR(); ++i)
@@ -87,7 +107,14 @@ namespace cr_advection {
 
     } // namespace
 
-    void Solver::advance(Field2D &density, const Field2D &vR, const Field2D &vZ, double dt) {
+    void Solver::advance(Field2D &density) {
+        if (!density.matches(grid_, Field2D::Location::Centroid))
+            throw std::invalid_argument("Advection density must match the grid");
+        if (dt_ == 0.0)
+            return;
+        const auto &vR = vR_;
+        const auto &vZ = vZ_;
+        const double dt = dt_;
 
         const auto &grid = grid_;
         const auto &opt = options_;
@@ -130,28 +157,26 @@ namespace cr_diffusion {
             explicit AxisCoefficients(int n) : lower(n, 0.0), upper(n, 0.0) {}
         };
 
-        AxisCoefficients radial_coefficients(const Grid2D &grid, double D, Boundary outer) {
+        AxisCoefficients radial_coefficients(const Grid2D &grid, double D) {
             AxisCoefficients coefficients(grid.nR());
             for (int i = 0; i < grid.nR(); ++i) {
                 const double volume = grid.R().center(i) * grid.R().width(i);
                 if (i > 0)
                     coefficients.lower[i] =
                         D * grid.R().face(i) / (volume * grid.radial_centroid_distance(i - 1));
-                if (i + 1 < grid.nR() || outer == Boundary::Absorbing)
-                    coefficients.upper[i] =
-                        D * grid.R().face(i + 1) / (volume * grid.radial_centroid_distance(i));
+                coefficients.upper[i] =
+                    D * grid.R().face(i + 1) / (volume * grid.radial_centroid_distance(i));
             }
             return coefficients;
         }
 
-        AxisCoefficients vertical_coefficients(const Grid2D &grid, double D, Boundary outer) {
+        AxisCoefficients vertical_coefficients(const Grid2D &grid, double D) {
             AxisCoefficients coefficients(grid.nz());
             for (int j = 0; j < grid.nz(); ++j) {
                 if (j > 0)
                     coefficients.lower[j] =
                         D / (grid.z().width(j) * grid.z().center_distance(j - 1));
-                if (j + 1 < grid.nz() || outer == Boundary::Absorbing)
-                    coefficients.upper[j] = D / (grid.z().width(j) * grid.z().center_distance(j));
+                coefficients.upper[j] = D / (grid.z().width(j) * grid.z().center_distance(j));
             }
             return coefficients;
         }
@@ -182,13 +207,13 @@ namespace cr_diffusion {
             line[k] -= cp[k] * line[k + 1];
     }
 
-    Solver::Solver(const Grid2D &grid, double D, double dt, const Options &options)
-        : grid_(grid), options_(options), D_(D), half_dt_(0.5 * dt), radial_(grid.nR()),
-          vertical_(grid.nz()), initial_(grid), intermediate_(grid), result_(grid),
+    Solver::Solver(const Grid2D &grid, double D, double dt)
+        : grid_(grid), D_(D), half_dt_(0.5 * dt), radial_(grid.nR()), vertical_(grid.nz()),
+          initial_(grid), intermediate_(grid), result_(grid),
           line_(std::max(grid.nR(), grid.nz())) {
 
-        auto radial = radial_coefficients(grid_, D, options.outer_R);
-        auto vertical = vertical_coefficients(grid_, D, options.upper_z);
+        auto radial = radial_coefficients(grid_, D);
+        auto vertical = vertical_coefficients(grid_, D);
         radial_.lower = std::move(radial.lower);
         radial_.upper = std::move(radial.upper);
         vertical_.lower = std::move(vertical.lower);
@@ -198,10 +223,10 @@ namespace cr_diffusion {
     }
 
     void Solver::advance(Field2D &density) {
-        if (D_ == 0.0)   return;
+        if (D_ == 0.0)
+            return;
 
         const auto &grid = grid_;
-        const auto &options = options_;
         const auto &radial = radial_;
         const auto &vertical = vertical_;
         const double half_dt = half_dt_;
@@ -213,7 +238,9 @@ namespace cr_diffusion {
         // Step 1: (I - dt/2 L_R) intermediate = (I + dt/2 L_z) initial.
         for (int j = 0; j < grid.nz(); ++j) {
             for (int i = 0; i < grid.nR(); ++i)
-                line_[i] = initial(i, j) + half_dt * (vertical.lower[j] * (initial(i, j - 1) - initial(i, j)) + vertical.upper[j] * (initial(i, j + 1) - initial(i, j)));
+                line_[i] = initial(i, j) +
+                           half_dt * (vertical.lower[j] * (initial(i, j - 1) - initial(i, j)) +
+                                      vertical.upper[j] * (initial(i, j + 1) - initial(i, j)));
             radial.solve(line_);
             for (int i = 0; i < grid.nR(); ++i)
                 intermediate(i, j) = line_[i];
@@ -223,7 +250,10 @@ namespace cr_diffusion {
         // Step 2: (I - dt/2 L_z) result = (I + dt/2 L_R) intermediate.
         for (int i = 0; i < grid.nR(); ++i) {
             for (int j = 0; j < grid.nz(); ++j)
-                line_[j] = intermediate(i, j) + half_dt * (radial.lower[i] * (intermediate(i - 1, j) - intermediate(i, j)) + radial.upper[i] * (intermediate(i + 1, j) - intermediate(i, j)));
+                line_[j] =
+                    intermediate(i, j) +
+                    half_dt * (radial.lower[i] * (intermediate(i - 1, j) - intermediate(i, j)) +
+                               radial.upper[i] * (intermediate(i + 1, j) - intermediate(i, j)));
             vertical.solve(line_);
             for (int j = 0; j < grid.nz(); ++j) {
                 result(i, j) = line_[j];

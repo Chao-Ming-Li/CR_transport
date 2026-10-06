@@ -21,15 +21,14 @@ int main() {
         v = -0.1;
     cr_advection::Options options;
     options.limiter = cr_advection::Limiter::MC;
-    cr_advection::Solver advection(grid, options);
+    cr_advection::Solver advection(grid, vr, vz, 0.001, options);
     cr_diffusion::Solver diffusion(grid, 0.02, 0.001);
     Field2D reference = density;
     for (int step = 0; step < 20; ++step) {
-        const double dt = step % 2 ? 0.001 : 0.002;
-        advection.advance(density, vr, vz, dt);
+        advection.advance(density);
         diffusion.advance(density);
-        cr_advection::Solver fresh_advection(grid, options);
-        fresh_advection.advance(reference, vr, vz, dt);
+        cr_advection::Solver fresh_advection(grid, vr, vz, 0.001, options);
+        fresh_advection.advance(reference);
         cr_diffusion::Solver fresh_diffusion(grid, 0.02, 0.001);
         fresh_diffusion.advance(reference);
         for (std::size_t k = 0; k < density.data.size(); ++k)
@@ -39,11 +38,23 @@ int main() {
     bool rejected = false;
     Field2D wrong(grid);
     try {
-        advection.advance(density, wrong, vz, 0.001);
+        cr_advection::Solver(grid, wrong, vz, 0.001, options);
     } catch (const std::invalid_argument &) {
         rejected = true;
     }
     check(rejected && before == density.data);
+    cr_advection::Solver zero_step(grid, vr, vz, 0.0, options);
+    zero_step.advance(density);
+    check(before == density.data);
+    for (double &v : vr.data)
+        v = 0.0;
+    for (double &v : vz.data)
+        v = 0.0;
+    // The reused solver keeps its original velocity snapshot.
+    advection.advance(density);
+    cr_advection::Solver(grid, vr, vz, 0.001, options).advance(reference);
+    check(density.data != reference.data);
+    before = density.data;
     cr_diffusion::Solver disabled(grid, 0, 1);
     disabled.advance(density);
     check(before == density.data);
