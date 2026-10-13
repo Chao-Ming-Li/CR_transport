@@ -460,7 +460,6 @@ void write_array1D_to_txt(const char *filename, const double *arr) {
     fclose(file);
 }
 
-
 void CN_scheme_opt(double *ndis, double *src, double *dT_tau, CNMatrix *matrix, CNWorkspace *workspace) {
 
     double CN_Rb_iso[NR], CN_Rd[NR], CN_Rx[NR];
@@ -494,7 +493,6 @@ void CN_scheme_opt(double *ndis, double *src, double *dT_tau, CNMatrix *matrix, 
     }
     apply_boundary_conditions(ndis);
 }
-
 
 void solve_diff_adv_equation_CN_opt(double *ndis_C12, double *ndis_B11, double *ndis_H, double D, double Rg) {
 
