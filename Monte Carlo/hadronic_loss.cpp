@@ -7,7 +7,7 @@
 
 #define PI 3.14159265358979323846
 #define SEED 12345
-#define N_particles 10000
+#define N_particles 51
 #define T_end 1e8 // total simulation time in years
 #define c_pc_yr 0.30660139 // speed of light in pc/yr
 #define c_cm_s 2.99792458e10 // speed of light in cm/s
@@ -67,18 +67,14 @@ int main(){
     std::vector<double> E(N_particles); // total energy in unit of GeV
     std::vector<double> t(N_particles); // propagation time in years
 
-    // Random engine
-    std::mt19937_64 rng(SEED);  // fixed seed -> reproducible
-    // Uniform random number in [0, 1)
-    std::uniform_real_distribution<double> uniform(0.0, 1.0);
-
+    // Equally spaced log10 energies: 10^1.0, 10^1.1, ..., 10^6.0 GeV.
+    const double log_E_min = std::log10(E_min);
+    const double log_E_step = (std::log10(E_max) - log_E_min) / (N_particles - 1);
     for (int i = 0; i < N_particles; ++i) {
-        const double u = uniform(rng);
-        E[i] = 1.0 / ((1.0 - u) / E_min + u / E_max); // initialize energy to power-law distribution with -2 slope 
+        E[i] = std::pow(10.0, log_E_min + i * log_E_step);
     }
 
     // Each particle owns its random stream, independent of thread scheduling.
-    // Keep initialization above serial to preserve the initial energy sample.
     #pragma omp parallel for default(none) shared(x, y, z, E, t, v_z) schedule(static)
     for (int i = 0; i < N_particles; ++i) {
         std::seed_seq particle_seed{SEED, i, 1};
@@ -86,7 +82,8 @@ int main(){
         std::uniform_real_distribution<double> particle_uniform(0.0, 1.0);
         while (t[i] < T_end) {
             // Explicit step: evaluate gas density at the starting position.
-            const double nH = hydrogen_density(x[i], y[i], z[i]);
+            // const double nH = hydrogen_density(x[i], y[i], z[i]);
+            const double nH = 1.0; // constant hydrogen density in cm^-3
             double cos_theta_v = 2.0 * particle_uniform(particle_rng) - 1.0;
             double sin_theta_v = std::sqrt(1.0 - cos_theta_v * cos_theta_v);
             double phi_v = 2.0 * PI * particle_uniform(particle_rng);
@@ -104,9 +101,9 @@ int main(){
     }
 
     // Raw native-endian doubles: x0, y0, z0 (pc), E0 (GeV), x1, ...
-    std::ofstream output("particles_loss_t1e8_dg2gas.bin", std::ios::binary | std::ios::trunc);
+    std::ofstream output("particles_loss_t1e8_nH1.0_test2.bin", std::ios::binary | std::ios::trunc);
     if (!output) {
-        std::cerr << "Cannot open particles_loss_t1e8_dg2gas.bin for writing\n";
+        std::cerr << "Cannot open particles_loss_t1e8_nH1.0_test2.bin for writing\n";
         return 1;
     }
     for (std::size_t i = 0; i < N_particles; ++i) {

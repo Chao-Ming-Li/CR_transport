@@ -7,17 +7,21 @@ endif
 CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -Wpedantic
 OPENMP_FLAGS ?= -fopenmp
 THREADS ?= $(shell sysctl -n hw.logicalcpu 2>/dev/null || echo 1)
-TARGET := hadronic_loss
+TARGET ?= spallation
+TARGETS := spallation hadronic_loss
 
 .PHONY: all run clean
 
 all: $(TARGET)
 
-$(TARGET): hadronic_loss.cpp Makefile
+spallation: spallation.cpp cross_section.hpp Makefile
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OPENMP_FLAGS) $< $(LDFLAGS) $(OPENMP_FLAGS) $(LDLIBS) -o $@
+
+hadronic_loss: hadronic_loss.cpp Makefile
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OPENMP_FLAGS) $< $(LDFLAGS) $(OPENMP_FLAGS) $(LDLIBS) -o $@
 
 run: $(TARGET)
-	OMP_NUM_THREADS=$(THREADS) time ./$(TARGET) &
+	OMP_NUM_THREADS=$(THREADS) time ./$(TARGET)
 
 clean:
-	$(RM) $(TARGET)
+	$(RM) $(TARGETS)
