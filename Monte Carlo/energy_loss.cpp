@@ -20,6 +20,32 @@ struct Proton {
     double z;
 };
 
+struct VelocityField {
+    double u_x; // pc/yr
+    double u_y; // pc/yr
+    double u_z; // pc/yr
+    double divergence; // du_x/dx + du_y/dy + du_z/dz, yr^-1
+};
+
+// Cartesian coordinates in pc and time in years. Keep the velocity and its
+// analytic divergence together when replacing this model with another wind.
+VelocityField velocity_field(double x_pc, double y_pc, double z_pc, double time_yr){
+    const double a = 1e-8; // vertical wind gradient in yr^-1
+    (void)x_pc;
+    (void)y_pc;
+    (void)time_yr;
+    return {0.0, 0.0, a * z_pc, a};
+}
+
+double apply_adiabatic_loss(double E, double divergence, double dt){
+    // dp/dt = -div(u)*p/3, with E the total energy in GeV and p in GeV/c.
+    // Freeze the local divergence over this substep. This is exact for constant
+    // divergence; spatial/time-dependent fields require timestep convergence.
+    // Negative divergence describes compression and produces an energy gain.
+    const double p2 = (E - m_p) * (E + m_p);
+    return std::sqrt(m_p * m_p + p2 * std::exp(-2.0 * divergence * dt / 3.0));
+}
+
 double sigma_pp(double T){
     constexpr double T_threshold = 0.2797;
     if (T <= T_threshold)
@@ -58,7 +84,7 @@ double hydrogen_density(double x_pc, double y_pc, double z_pc){
 }
 
 int main(){
-    const double v_z = 3e-2;  // speed in units of pc / yr, equivalent to 30000 km/s
+    const bool include_hadronic_loss = true; // set false to compare p(t) = p0*exp(-a*t/3)
     const double E_min = 10.0; // minimum energy in GeV
     const double E_max = 1e6; // maximum energy in GeV
     std::vector<double> x(N_particles);
@@ -79,34 +105,45 @@ int main(){
 
     // Each particle owns its random stream, independent of thread scheduling.
     // Keep initialization above serial to preserve the initial energy sample.
-    #pragma omp parallel for default(none) shared(x, y, z, E, t, v_z) schedule(static)
+    #pragma omp parallel for default(none) shared(x, y, z, E, t, include_hadronic_loss) schedule(static)
     for (int i = 0; i < N_particles; ++i) {
         std::seed_seq particle_seed{SEED, i, 1};
         std::mt19937_64 particle_rng(particle_seed);
         std::uniform_real_distribution<double> particle_uniform(0.0, 1.0);
         while (t[i] < T_end) {
             // Explicit step: evaluate gas density at the starting position.
-            const double nH = hydrogen_density(x[i], y[i], z[i]);
+            // const double nH = hydrogen_density(x[i], y[i], z[i]);
+            const double nH = 1.0; // constant hydrogen density in cm^-3
+            const VelocityField wind = velocity_field(x[i], y[i], z[i], t[i]);
             double cos_theta_v = 2.0 * particle_uniform(particle_rng) - 1.0;
             double sin_theta_v = std::sqrt(1.0 - cos_theta_v * cos_theta_v);
             double phi_v = 2.0 * PI * particle_uniform(particle_rng);
             double lambda = 2.0 * std::pow(E[i], 1./3); // mean free path
-            double dt = std::min(lambda / 2.0 / c_pc_yr, T_end - t[i]); // time step in years
+            const double dt_full = lambda / 2.0 / c_pc_yr;
+            double dt = std::min(dt_full, T_end - t[i]); // time step in years
+            // Preserve <dr^2> = 6*D*dt when the final step is shortened.
+            const double step_length = lambda * std::sqrt(dt / dt_full);
             t[i] += dt; // update propagation time in years
-            x[i] += lambda * sin_theta_v * std::cos(phi_v);
-            y[i] += lambda * sin_theta_v * std::sin(phi_v);
-            z[i] += lambda * cos_theta_v + v_z * dt;  // add vertical motion
-            // Compute the energy loss due to hadronic interactions
-            double T = E[i] - m_p; // kinetic energy in GeV
-            double dT_dt = -0.5 * nH * sigma_pp(T) * c_cm_s * T * yr2s; // energy loss rate in GeV/yr
-            E[i] += dT_dt * dt; // update energy
+            x[i] += step_length * sin_theta_v * std::cos(phi_v) + wind.u_x * dt;
+            y[i] += step_length * sin_theta_v * std::sin(phi_v) + wind.u_y * dt;
+            z[i] += step_length * cos_theta_v + wind.u_z * dt;
+
+            E[i] = apply_adiabatic_loss(E[i], wind.divergence, dt);
+
+            // First-order splitting: hadronic rate uses the adiabatically cooled energy
+            // and the gas density at the starting position.
+            if (include_hadronic_loss) {
+                double T = E[i] - m_p; // kinetic energy in GeV
+                double dT_dt = -0.5 * nH * sigma_pp(T) * c_cm_s * T * yr2s; // GeV/yr
+                E[i] += dT_dt * dt;
+            }
         }   
     }
 
     // Raw native-endian doubles: x0, y0, z0 (pc), E0 (GeV), x1, ...
-    std::ofstream output("particles_loss_t1e8_dg2gas.bin", std::ios::binary | std::ios::trunc);
+    std::ofstream output("energy_loss_nH1.0.bin", std::ios::binary | std::ios::trunc);
     if (!output) {
-        std::cerr << "Cannot open particles_loss_t1e8_dg2gas.bin for writing\n";
+        std::cerr << "Cannot open energy_loss_nH1.0.bin for writing\n";
         return 1;
     }
     for (std::size_t i = 0; i < N_particles; ++i) {

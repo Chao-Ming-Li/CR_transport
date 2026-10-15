@@ -7,20 +7,12 @@
 #include "cross_section.hpp"
 #define PI 3.14159265358979323846
 #define SEED 12345
-#define N_particles 210000
+#define N_particles 21000
 #define T_end 1e8 // total simulation time in years
 #define c_pc_yr 0.30660139 // speed of light in pc/yr
 #define c_cm_s 2.99792458e10 // speed of light in cm/s
 #define m_p 0.938272 // proton mass in GeV/c^2
 #define yr2s 31557600.0 // seconds in a year
-struct Proton {
-    double momentum; // in GeV/c   
-    double x; 
-    double y;
-    double z;
-};
-
-
 
 // Galactocentric Cartesian positions in pc; hydrogen nuclei density in cm^-3.
 double hydrogen_density(double x_pc, double y_pc, double z_pc){
@@ -99,6 +91,35 @@ void spallate(cross_section::Isotope& species, double nH, double dt,
 }
 
 
+bool output2bin(const std::vector<double>& x,
+                const std::vector<double>& y,
+                const std::vector<double>& z,
+                const std::vector<double>& E,
+                const std::vector<cross_section::Isotope>& species){
+    // Five native-endian doubles per record (40 bytes): x, y, z [pc],
+    // E [GeV/n], species ID. IDs follow Isotope in cross_section.hpp:
+    // 0=O16, 1=N15, 2=N14, 3=C13, 4=C12, 5=B11, 6=B10,
+    // 7=Be10, 8=Be9, 9=Be7; -1=destroyed into untracked fragments.
+    // Keep removed particles in the output to preserve initial particle order.
+    std::ofstream output("spallation_test.bin", std::ios::binary | std::ios::trunc);
+    if (!output) {
+        std::cerr << "Cannot open spallation_test.bin for writing\n";
+        return false;
+    }
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        const double species_id = species[i] == cross_section::Isotope::Count? -1.0 : static_cast<double>(species[i]);
+        const double par[] = {x[i], y[i], z[i], E[i], species_id};
+        output.write(reinterpret_cast<const char*>(par), sizeof(par));
+    }
+    output.close();
+    if (!output) {
+        std::cerr << "Failed to write spallation_test.bin\n";
+        return false;
+    }
+
+    return true;
+}
+
 int main(){
     // A categorical daughter draw requires the listed branches to fit within
     // the total destruction cross section. Do not renormalize missing channels.
@@ -112,7 +133,7 @@ int main(){
             return 1;
         }
     }
-    const double v_z = 3e-2;  // speed in units of pc / yr, equivalent to 30000 km/s
+    const double v_z = 3e-4;  // speed in units of pc / yr, equivalent to 300 km/s
     const double E_min = 10.0; // minimum energy in GeV
     const double E_max = 1e6; // maximum energy in GeV
     std::vector<double> x(N_particles);
@@ -137,7 +158,7 @@ int main(){
         while (t[i] < T_end && species[i] != cross_section::Isotope::Count) {
             // Explicit step: evaluate gas density at the starting position.
             // const double nH = hydrogen_density(x[i], y[i], z[i]);
-            const double nH = 1.0; // constant hydrogen density in cm^-3
+            const double nH = 0.1; // constant hydrogen density in cm^-3
             double cos_theta_v = 2.0 * particle_uniform(particle_rng) - 1.0;
             double sin_theta_v = std::sqrt(1.0 - cos_theta_v * cos_theta_v);
             double phi_v = 2.0 * PI * particle_uniform(particle_rng);
@@ -155,18 +176,7 @@ int main(){
         }   
     }
 
-    // Raw native-endian doubles: x0, y0, z0 (pc), E0 (GeV), x1, ...
-    std::ofstream output("spallation_test.bin", std::ios::binary | std::ios::trunc);
-    if (!output) {
-        std::cerr << "Cannot open spallation_test.bin for writing\n";
-        return 1;
-    }
-    for (std::size_t i = 0; i < N_particles; ++i) {
-        const double par[] = {x[i], y[i], z[i], E[i]};
-        output.write(reinterpret_cast<const char*>(par), sizeof(par));
-    }
-    output.close();
-
+    if (!output2bin(x, y, z, E, species)) return 1;
 
     return 0;
 }
