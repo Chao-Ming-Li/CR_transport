@@ -15,12 +15,14 @@ namespace {
 void initialize_CR_source(Field2D &ndis, const Grid2D &grid) {
     validate_grid_size(ndis, grid);
     // Gaussian centered at (R, z) = (10, 10) kpc, as in the original model.
+    // Instantaneous injection at t=0; sigma_R = sigma_z = 3/sqrt(2) kpc.
+    // Density amplitude is one, independent of the evolution timestep.
     // Ghost cells are left unchanged.
     for (int i = 0; i < grid.nR(); ++i) {
         const double R1 = grid.radial_centroid(i) - 10.0;
         for (int j = 0; j < grid.nz(); ++j) {
             const double Z1 = grid.z().center(j) - 10.0;
-            ndis(i, j) = std::exp(-R1 * R1 / 9.0 - Z1 * Z1 / 9.0) * DT;
+            ndis(i, j) = std::exp(-R1 * R1 / 9.0 - Z1 * Z1 / 9.0);
         }
     }
 }
@@ -28,31 +30,15 @@ void initialize_CR_source(Field2D &ndis, const Grid2D &grid) {
 void initialize_wind_velocity(Field2D &vR, Field2D &vZ, const Grid2D &grid) {
     validate_grid_size(vR, grid, Field2D::Location::RadialFace);
     validate_grid_size(vZ, grid, Field2D::Location::VerticalFace);
-    // // Radial faces: (R.face(i), z.center(j)).
-    // for (int i = 0; i < vR.nR(); ++i)
-    //     for (int j = 0; j < vR.nz(); ++j)
-    //         vR(i, j) = 0.0;
-
-    // // Vertical faces: (R.center(i), z.face(j)); velocity in kpc / yr.
-    // for (int i = 0; i < vZ.nR(); ++i)
-    //     for (int j = 0; j < vZ.nz(); ++j)
-    //         vZ(i, j) = j == 0 ? 0.0 : 0.1;
-    // const double a = 0.01;   // inverse simulation time unit
-    // const double b = 0.01;   // inverse simulation time unit
-    // const double Rstar = 30.0;
-
+    // Constant +z wind: convert 300 km/s to kpc/yr. The lower face
+    // has zero flux to match the reflecting z=0 boundary.
+    constexpr double v_z = 300.0 * 1e5 * 31557600.0 / 3.0856775814913673e21;
     for (int i = 0; i < vR.nR(); ++i)
         for (int j = 0; j < vR.nz(); ++j)
-            // vR(i, j) = a * grid.R().face(i);
-            vR(i, j) = i == 0 ? 0.0 : 3e-7; // kpc / yr, equivalent to 300 km/s
-                                            // vR(i, j) = 0.0;  
-
+            vR(i, j) = 0.0;
     for (int i = 0; i < vZ.nR(); ++i)
         for (int j = 0; j < vZ.nz(); ++j)
-            // vZ(i, j) = b * (grid.radial_centroid(i) / Rstar)
-            //             * grid.z().face(j);
-            vZ(i, j) = j == 0 ? 0.0 : 3e-7; // kpc / yr, equivalent to 300 km/s
-                                            // vZ(i, j) = 0.0;
+            vZ(i, j) = j == 0 ? 0.0 : v_z;
 }
 
 void initialize_gas(Field2D &ndis_H, const double nH, const Grid2D &grid) {

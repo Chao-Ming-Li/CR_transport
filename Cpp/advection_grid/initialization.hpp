@@ -1,10 +1,6 @@
 #pragma once // 现代写法，防止头文件被重复包含（等价于传统的 #ifndef/#define/#endif）
 
 #include "field.hpp"
-#include <vector>
-#include <fstream>
-#include <iostream>
-#include <span>
 
 // initialize constants for solver
 #define DT 10000.0 // Time step in years

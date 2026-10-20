@@ -37,12 +37,14 @@ void write_array_to_bin(const std::string &filename, Field2D &arr, const std::si
 
     if (!file) {
         // 使用 std::cerr 代替 perror
-        std::cerr << "File opening failed: " << filename << std::endl;
-        return;
+        throw std::runtime_error("File opening failed: " + filename);
     }
 
     // reinterpret_cast 将 double 指针转换为 char 指针，符合 write 接口
     file.write(reinterpret_cast<const char *>(arr.data.data()), size * sizeof(double));
+
+    if (!file)
+        throw std::runtime_error("File writing failed: " + filename);
 
     // file 在离开作用域时会自动关闭，不需要显式调用 file.close()
 }
@@ -82,9 +84,9 @@ void solve_transport_equation(Field2D &ndis_C, Field2D &ndis_H, const Field2D &v
     // This outgoing-flux bound also accounts for cylindrical/stretched cells.
     constexpr double advection_cfl_limit = 0.5;
     if (DT * max_advection_rate > advection_cfl_limit)
-        throw std::invalid_argument("Advection CFL condition violated: reduce DT to at most " +
-                                    std::to_string(advection_cfl_limit / max_advection_rate) +
-                                    " years");
+        throw std::invalid_argument("Advection CFL condition violated: reduce DT to at most "
+        + std::to_string(advection_cfl_limit / max_advection_rate) + " years");
+
 
     // Each ADI explicit half-step is nonnegative when (DT/2)*rate <= 1.
     // Exceeding this bound affects positivity, not implicit diffusion stability.
@@ -105,14 +107,20 @@ void solve_transport_equation(Field2D &ndis_C, Field2D &ndis_H, const Field2D &v
     cr_advection::Solver advection(grid, vR, vZ, DT, options);
     cr_diffusion::Solver diffusion(grid, D, DT);
 
+    // Start a fresh trajectory. Preserve the existing raw float64 layout,
+    // including ghost cells; snapshots are initial, every 10 steps, and final.
+    const std::string output_name = "ndis_C_v300_D1e29_cp.bin";
+    std::ofstream reset_output(output_name, std::ios::binary | std::ios::trunc);
+    if (!reset_output)
+        throw std::runtime_error("Cannot open transport output");
+    reset_output.close();
     apply_boundary_conditions(ndis_C, grid);
+    write_array_to_bin(output_name, ndis_C, ndis_C.data.size());
     // Sequential advection/diffusion is first-order operator splitting.
     for (int t = 0; t < NT; ++t) {
         advection.advance(ndis_C);
         diffusion.advance(ndis_C);
-        if (t % 10 == 0)
-            write_array_to_bin(D == 0.0 ? "ndis_C_advection_dR50_dz10_r1.03_dt1e4_v300_D3e28.bin"
-                                        : "ndis_C_transport_dR50_dz10_r1.03_dt1e4_v300_D3e28.bin",
-                               ndis_C, ndis_C.data.size());
+        if ((t + 1) % 10 == 0 || t + 1 == NT)
+            write_array_to_bin(output_name, ndis_C, ndis_C.data.size());
     }
 }

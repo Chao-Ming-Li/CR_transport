@@ -18,6 +18,7 @@
 struct EarthArrival {
     double energy; // total nuclear energy in GeV
     double species_id;
+    double time_yr; // elapsed propagation time at the recorded step endpoint
 };
 
 struct VelocityField {
@@ -184,13 +185,14 @@ bool output2bin(const std::vector<double>& x, const std::vector<double>& y,
 }
 
 bool output_earth_arrivals(const std::vector<std::vector<EarthArrival>>& arrivals){
-    // Two native-endian doubles per record (16 bytes): total nuclear energy [GeV], species ID.
+    // Three native-endian doubles per record (24 bytes): total nuclear energy
+    // [GeV], species ID, elapsed propagation time [yr].
     std::ofstream output("earth_arrivals.bin", std::ios::binary | std::ios::trunc);
 
     std::size_t count = 0;
     for (const auto& particle_arrivals : arrivals) {
         for (const EarthArrival& arrival : particle_arrivals) {
-            const double record[] = {arrival.energy, arrival.species_id};
+            const double record[] = {arrival.energy, arrival.species_id, arrival.time_yr};
             output.write(reinterpret_cast<const char*>(record), sizeof(record));
             ++count;
         }
@@ -224,7 +226,7 @@ int main(){
     }
 
     // Each particle owns its random stream, independent of thread scheduling.
-    #pragma omp parallel for default(none) shared(x, y, z, E, t, include_hadronic_loss) schedule(dynamic, 1)
+    #pragma omp parallel for default(none) shared(x, y, z, E, t, species, earth_arrivals) schedule(dynamic, 1)
     for (int i = 0; i < N_particles; ++i) {
         std::seed_seq particle_seed{SEED, i, 1};
         std::mt19937_64 particle_rng(particle_seed);
@@ -256,7 +258,7 @@ int main(){
             if (species[i] != cross_section::Isotope::Count) {
                 const double lambda_end = mean_free_path(E[i], species[i]);
                 if (distance_to_earth_ring(x[i], y[i], z[i], lambda_end) < lambda_end) {
-                    earth_arrivals[i].push_back({E[i], static_cast<double>(species[i])});
+                    earth_arrivals[i].push_back({E[i], static_cast<double>(species[i]), t[i]});
                 }
             }
         }   

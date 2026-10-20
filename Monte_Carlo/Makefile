@@ -7,8 +7,8 @@ endif
 CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -Wpedantic
 OPENMP_FLAGS ?= -fopenmp
 THREADS ?= $(shell sysctl -n hw.logicalcpu 2>/dev/null || echo 1)
-TARGET ?= energy_loss
-TARGETS := transport spallation hadronic_loss energy_loss transport_spallation_loss
+TARGET ?= transport_loss
+TARGETS := transport spallation hadronic_loss energy_loss transport_spallation_loss transport_loss
 
 .PHONY: all run run-transport-spallation-loss clean
 
@@ -20,10 +20,16 @@ transport: test.cpp Makefile
 spallation: spallation.cpp cross_section.hpp Makefile
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OPENMP_FLAGS) $< $(LDFLAGS) $(OPENMP_FLAGS) $(LDLIBS) -o $@
 
+spallation_check: spallation_check.cpp cross_section.hpp Makefile
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OPENMP_FLAGS) $< $(LDFLAGS) $(OPENMP_FLAGS) $(LDLIBS) -o $@
+
 hadronic_loss: hadronic_loss.cpp Makefile
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OPENMP_FLAGS) $< $(LDFLAGS) $(OPENMP_FLAGS) $(LDLIBS) -o $@
 
 energy_loss: energy_loss.cpp Makefile
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OPENMP_FLAGS) $< $(LDFLAGS) $(OPENMP_FLAGS) $(LDLIBS) -o $@
+
+transport_loss: transport_loss.cpp Makefile
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OPENMP_FLAGS) $< $(LDFLAGS) $(OPENMP_FLAGS) $(LDLIBS) -o $@
 
 transport_spallation_loss: transport_spallation_loss.cpp cross_section.hpp Makefile

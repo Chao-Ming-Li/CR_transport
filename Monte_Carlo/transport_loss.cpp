@@ -8,11 +8,72 @@
 #define PI 3.14159265358979323846
 #define SEED 12345
 #define N_particles 10000
-#define T_end 1e8 // total simulation time in years
+#define T_end 1e9 // total simulation time in years
 #define c_pc_yr 0.30660139 // speed of light in pc/yr
 #define c_cm_s 2.99792458e10 // speed of light in cm/s
 #define m_p 0.938272 // proton mass in GeV/c^2
 #define yr2s 31557600.0 // seconds in a year
+#define R_EARTH 8000.0 // solar-ring galactocentric radius in pc
+
+struct EarthArrival {
+    double energy; // total proton energy in GeV
+    double time_yr; // elapsed propagation time at the step endpoint
+};
+
+// Same axisymmetric solar-ring selection as transport_spallation_loss.cpp.
+// The tube radius is the mean free path at the recorded endpoint energy.
+double distance_to_earth_ring(double x_pc, double y_pc, double z_pc, double lambda){
+    const double dR_pc = std::hypot(x_pc, y_pc) - R_EARTH;
+    if (std::abs(dR_pc) >= lambda || std::abs(z_pc) >= lambda)
+        return lambda;
+    return std::hypot(dR_pc, z_pc);
+}
+
+bool output_final_distribution(const std::vector<double>& x, const std::vector<double>& y,
+                               const std::vector<double>& z, const std::vector<double>& E){
+    // Raw native-endian doubles: x0, y0, z0 (pc), E0 (GeV), x1, ...
+    std::ofstream output("output/proton_nH0.1_t1e9.bin", std::ios::binary | std::ios::trunc);
+    if (!output) {
+        std::cerr << "Cannot open proton_nH0.1_t1e9.bin for writing\n";
+        return false;
+    }
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        const double par[] = {x[i], y[i], z[i], E[i]};
+        output.write(reinterpret_cast<const char*>(par), sizeof(par));
+    }
+    output.close();
+    if (!output) {
+        std::cerr << "Cannot finish writing proton_nH0.1_t1e9.bin\n";
+        return false;
+    }
+    return true;
+}
+
+bool output_earth_arrivals(const std::vector<std::vector<EarthArrival>>& arrivals){
+    // Two native-endian doubles per record (16 bytes): E [GeV], time [yr].
+    // Each step ending inside the ring contributes a record, including repeat
+    // visits. Records are grouped by particle, not sorted by arrival time.
+    std::ofstream output("output/proton_earth_nH0.1_t1e9.bin", std::ios::binary | std::ios::trunc);
+    if (!output) {
+        std::cerr << "Cannot open proton_earth_nH0.1_t1e9.bin for writing\n";
+        return false;
+    }
+    std::size_t count = 0;
+    for (const auto& particle_arrivals : arrivals) {
+        for (const EarthArrival& arrival : particle_arrivals) {
+            const double record[] = {arrival.energy, arrival.time_yr};
+            output.write(reinterpret_cast<const char*>(record), sizeof(record));
+            ++count;
+        }
+    }
+    output.close();
+    if (!output) {
+        std::cerr << "Cannot finish writing proton_earth_nH0.1_t1e9.bin\n";
+        return false;
+    }
+    std::cout << "Recorded proton Earth arrivals: " << count << '\n';
+    return true;
+}
 struct Proton {
     double momentum; // in GeV/c   
     double x; 
@@ -35,6 +96,13 @@ VelocityField velocity_field(double x_pc, double y_pc, double z_pc, double time_
     (void)y_pc;
     (void)time_yr;
     return {0.0, 0.0, a * z_pc, a};
+}
+
+double mean_free_path(double E){
+    // Proton charge Z=1; E is total proton energy in GeV.
+    const double rigidity = std::sqrt((E - m_p) * (E + m_p)); // GV
+    // Same normalization as transport_spallation_loss.cpp: 2 pc at 10 GV.
+    return 2.0 * std::pow(rigidity / 10.0, 1.0 / 3.0);
 }
 
 double apply_adiabatic_loss(double E, double divergence, double dt){
@@ -93,19 +161,22 @@ int main(){
     std::vector<double> E(N_particles); // total energy in unit of GeV
     std::vector<double> t(N_particles); // propagation time in years
 
+    std::vector<std::vector<EarthArrival>> earth_arrivals(N_particles);
+
     // Random engine
     std::mt19937_64 rng(SEED);  // fixed seed -> reproducible
     // Uniform random number in [0, 1)
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
+    const double log_E_min = std::log10(E_min);
+    const double log_E_step = (std::log10(E_max) - log_E_min) / (N_particles - 1);
     for (int i = 0; i < N_particles; ++i) {
-        const double u = uniform(rng);
-        E[i] = 1.0 / ((1.0 - u) / E_min + u / E_max); // initialize energy to power-law distribution with -2 slope 
+        E[i] = std::pow(10.0, log_E_min + i * log_E_step); // dN/dE \propto E^-1
     }
 
     // Each particle owns its random stream, independent of thread scheduling.
     // Keep initialization above serial to preserve the initial energy sample.
-    #pragma omp parallel for default(none) shared(x, y, z, E, t, include_hadronic_loss) schedule(static)
+    #pragma omp parallel for default(none) shared(x, y, z, E, t, include_hadronic_loss, earth_arrivals) schedule(dynamic, 1)
     for (int i = 0; i < N_particles; ++i) {
         std::seed_seq particle_seed{SEED, i, 1};
         std::mt19937_64 particle_rng(particle_seed);
@@ -113,12 +184,12 @@ int main(){
         while (t[i] < T_end) {
             // Explicit step: evaluate gas density at the starting position.
             // const double nH = hydrogen_density(x[i], y[i], z[i]);
-            const double nH = 1.0; // constant hydrogen density in cm^-3
+            const double nH = 0.1; // constant hydrogen density in cm^-3
             const VelocityField wind = velocity_field(x[i], y[i], z[i], t[i]);
             double cos_theta_v = 2.0 * particle_uniform(particle_rng) - 1.0;
             double sin_theta_v = std::sqrt(1.0 - cos_theta_v * cos_theta_v);
             double phi_v = 2.0 * PI * particle_uniform(particle_rng);
-            double lambda = 2.0 * std::pow(E[i], 1./3); // mean free path
+            double lambda = mean_free_path(E[i]); // pc
             const double dt_full = lambda / 2.0 / c_pc_yr;
             double dt = std::min(dt_full, T_end - t[i]); // time step in years
             // Preserve <dr^2> = 6*D*dt when the final step is shortened.
@@ -137,19 +208,16 @@ int main(){
                 double dT_dt = -0.5 * nH * sigma_pp(T) * c_cm_s * T * yr2s; // GeV/yr
                 E[i] += dT_dt * dt;
             }
+
+            // Record the cooled energy and elapsed time at the step endpoint.
+            const double lambda_end = mean_free_path(E[i]);
+            if (distance_to_earth_ring(x[i], y[i], z[i], lambda_end) < lambda_end) {
+                earth_arrivals[i].push_back({E[i], t[i]});
+            }
         }   
     }
 
-    // Raw native-endian doubles: x0, y0, z0 (pc), E0 (GeV), x1, ...
-    std::ofstream output("energy_loss_nH1.0.bin", std::ios::binary | std::ios::trunc);
-    if (!output) {
-        std::cerr << "Cannot open energy_loss_nH1.0.bin for writing\n";
-        return 1;
-    }
-    for (std::size_t i = 0; i < N_particles; ++i) {
-        const double par[] = {x[i], y[i], z[i], E[i]};
-        output.write(reinterpret_cast<const char*>(par), sizeof(par));
-    }
-    output.close();
-
+    if (!output_final_distribution(x, y, z, E)) return 1;
+    if (!output_earth_arrivals(earth_arrivals)) return 1;
+    return 0;
 }

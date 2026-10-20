@@ -8,7 +8,7 @@
 #define PI 3.14159265358979323846
 #define SEED 12345
 #define N_particles 10000
-#define T_end 1e8 // total simulation time in years
+#define T_end 1e7 // total simulation time in years
 #define c_pc_yr 0.30660139 // speed of light in pc/yr
 #define c_cm_s 2.99792458e10 // speed of light in cm/s
 #define m_p 0.938272 // proton mass in GeV/c^2
@@ -30,7 +30,7 @@ struct VelocityField {
 // Cartesian coordinates in pc and time in years. Keep the velocity and its
 // analytic divergence together when replacing this model with another wind.
 VelocityField velocity_field(double x_pc, double y_pc, double z_pc, double time_yr){
-    const double a = 1e-8; // vertical wind gradient in yr^-1
+    const double a = 1e-7; // vertical wind gradient in yr^-1
     (void)x_pc;
     (void)y_pc;
     (void)time_yr;
@@ -91,7 +91,7 @@ double hydrogen_density(double x_pc, double y_pc, double z_pc){
 }
 
 int main(){
-    const bool include_hadronic_loss = true; // set false to compare p(t) = p0*exp(-a*t/3)
+    const bool include_hadronic_loss = false; // set false to compare p(t) = p0*exp(-a*t/3)
     const double E_min = 10.0; // minimum energy in GeV
     const double E_max = 1e6; // maximum energy in GeV
     std::vector<double> x(N_particles);
@@ -113,7 +113,7 @@ int main(){
 
     // Each particle owns its random stream, independent of thread scheduling.
     // Keep initialization above serial to preserve the initial energy sample.
-    #pragma omp parallel for default(none) shared(x, y, z, E, t, include_hadronic_loss) schedule(static)
+    #pragma omp parallel for default(none) shared(x, y, z, E, t, include_hadronic_loss) schedule(dynamic, 1)
     for (int i = 0; i < N_particles; ++i) {
         std::seed_seq particle_seed{SEED, i, 1};
         std::mt19937_64 particle_rng(particle_seed);
@@ -149,9 +149,9 @@ int main(){
     }
 
     // Raw native-endian doubles: x0, y0, z0 (pc), E0 (GeV), x1, ...
-    std::ofstream output("energy_loss_nH1.0.bin", std::ios::binary | std::ios::trunc);
+    std::ofstream output("adiabatic_loss_nH1.0_t1e7.bin", std::ios::binary | std::ios::trunc);
     if (!output) {
-        std::cerr << "Cannot open energy_loss_nH1.0.bin for writing\n";
+        std::cerr << "Cannot open adiabatic_loss_nH1.0_t1e7.bin for writing\n";
         return 1;
     }
     for (std::size_t i = 0; i < N_particles; ++i) {
