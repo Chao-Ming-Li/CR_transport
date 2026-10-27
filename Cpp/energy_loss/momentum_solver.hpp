@@ -15,7 +15,8 @@ namespace cr_momentum {
     // dq/dt = -dJ/dRg,
     // J = -(div(v)/3)*Rg*q - Rg^2*Dpp*d(q/Rg^2)/dRg.
     // Units: kpc, yr, GV; Dpp is in GV^2/yr, NOT D_RgRg.
-    // Upwind adiabatic flux, two-point diffusion, backward Euler in time.
+    // Upwind adiabatic flux, two-point diffusion, Crank-Nicolson in time.
+    // CN does not guarantee nonnegative densities for arbitrary timesteps.
     // Face coefficients are spatially uniform and copied at construction.
     // Zero diffusion is supplied as an array of zeros of length Rg.size()+1.
     // Grid, wind, dt and coefficients are fixed snapshots. Reconstruct when
