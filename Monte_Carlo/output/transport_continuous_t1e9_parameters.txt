@@ -1,0 +1,12 @@
+stochastic 0
+N_particles 10000
+dt_yr 1000
+T_end_yr 1000000000
+nH_cm-3 0.10000000000000001
+a_yr-1 1e-08
+kappa 0.5
+E_min_GeV 10
+E_max_GeV 1000000
+R_earth_pc 8000
+tube_radius_pc 100
+seed 12345

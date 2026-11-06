@@ -1,0 +1,12 @@
+N 200000
+T_end_yr 100000000
+D_cm2_s 1e29
+D_kpc2_yr 3.3143844035428949e-07
+vz_km_s 300
+vz_kpc_yr 3.0681364951370847e-07
+R0_kpc 10
+z0_kpc 50
+sigma0_kpc 2
+Rmax_kpc 100
+zmax_kpc 150
+mc_steps 500
