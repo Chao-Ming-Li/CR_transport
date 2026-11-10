@@ -30,6 +30,24 @@ rerun directly on the new six-column output.
 
 ## Installation
 
+For final-particle and channel statistics, run from `external/`:
+
+```sh
+make pp_channel_statistics
+./pp_channel_statistics 10000 > pp_channel_statistics.log 2>&1
+jupyter lab pp_channel_analysis.ipynb
+```
+
+The optional argument is the number of independent 1 TeV kinetic-energy
+fixed-target collisions. `pp_channel_events.csv` stores each event's PYTHIA
+process code and final multiplicity; `pp_channel_particles.csv` stores every
+final particle, including antiparticles, with laboratory energy and momentum.
+These files are overwritten each run. Default particle decays are retained.
+The notebook exports process fractions, final-species statistics, final-state
+composition frequencies and plots. Process fractions are conditional on
+inelastic collisions; elastic scattering is not enabled. Composition classes
+count final PDG species and do not represent separate matrix-element channels.
+
 Version: 8.318. Source: https://pythia.org/releases/pythia83/pythia8318.tgz
 
 The source tree and local C++ libraries are in `external/pythia8318`.

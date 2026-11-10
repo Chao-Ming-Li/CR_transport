@@ -1,0 +1,5 @@
+process_code,process_name,count,fraction,standard_error
+101,non-diffractive,7086,0.7086,0.004544073502926642
+103,A B -> X B single diffractive,1106,0.1106,0.00313636158629709
+104,A B -> A X single diffractive,1129,0.1129,0.0031647051995407093
+105,A B -> X X double diffractive,679,0.0679,0.0025157422363986342

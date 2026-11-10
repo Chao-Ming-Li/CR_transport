@@ -6,8 +6,8 @@
 #include <iostream>
 #include <string>
 
-int main() {
-    const double T_beam = 1000.0; // Incident proton kinetic energy [GeV].
+int run_fixed_target(double T_beam, const std::string& filename) {
+    // T_beam is the incident proton kinetic energy [GeV].
     const int N_events = 10000; // Independent collisions at the same beam energy.
     Pythia8::Pythia pythia;
     const double m_p = pythia.particleData.m0(2212); // Proton mass [GeV].
@@ -24,6 +24,8 @@ int main() {
     // Generate inelastic pp events, including diffractive processes.
     // Keep default particle decays, including pi0 -> gamma gamma.
     pythia.readString("SoftQCD:inelastic = on");
+    // At 10 GeV kinetic energy, sqrt(s) is below the SoftQCD range.
+    pythia.readString("LowEnergyQCD:inelastic = on");
     pythia.readString("Random:setSeed = on");
     pythia.readString("Random:seed = 12345");
     pythia.readString("Next:numberShowInfo = 0");
@@ -31,7 +33,7 @@ int main() {
     pythia.readString("Next:numberShowEvent = 0");
     if (!pythia.init()) return 1;
     // Run from external/. Each row describes one independent collision.
-    std::ofstream output("pp_fixed_target_events.csv");
+    std::ofstream output(filename);
     if (!output) return 1;
     output << "event_id,T_beam_GeV,nucleon1_pdg,T_nucleon1_GeV,nucleon2_pdg,T_nucleon2_GeV\n";
     output << std::setprecision(16);
@@ -101,6 +103,21 @@ int main() {
               << "Failed generation attempts = " << N_failed_attempts << '\n'
               << "Maximum |energy residual| = " << max_dE << " GeV\n"
               << "Maximum momentum residual = " << max_dp << " GeV\n"
-              << "Wrote pp_fixed_target_events.csv\n";
+              << "Wrote " << filename << '\n';
+    return 0;
+}
+
+int main() {
+    const double T_beams[] = {10.0, 100.0, 1e4, 1e5, 1e6}; // Kinetic energies [GeV].
+    const std::string filenames[] = {
+        "pp_fixed_target_events_10GeV.csv",
+        "pp_fixed_target_events_100GeV.csv",
+        "pp_fixed_target_events_10TeV.csv",
+        "pp_fixed_target_events_100TeV.csv",
+        "pp_fixed_target_events_1PeV.csv"
+    };
+    for (int i = 0; i < 5; ++i) {
+        if (run_fixed_target(T_beams[i], filenames[i]) != 0) return 1;
+    }
     return 0;
 }

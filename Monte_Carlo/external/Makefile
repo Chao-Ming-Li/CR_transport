@@ -11,5 +11,11 @@ pp_fixed_target: pp_fixed_target.cpp
 pp_single_event: pp_single_event.cpp
 	$(CXX) $< $(PYTHIA_FLAGS) -o $@
 
+pp_channel_statistics: pp_channel_statistics.cpp
+	$(CXX) $< $(PYTHIA_FLAGS) -o $@
+
+pp_powerlaw_spectrum: pp_powerlaw_spectrum.cpp
+	$(CXX) $< $(PYTHIA_FLAGS) -o $@
+
 run: pp_fixed_target
 	./pp_fixed_target
