@@ -6,9 +6,7 @@
 #include <stdexcept>
 #include <utility>
 
-
 AxisGrid AxisGrid::linear(int n, double lower, double upper) {
-
     std::vector<double> faces(static_cast<std::size_t>(n) + 1);
 
     for (int i = 0; i <= n; ++i) {
@@ -22,8 +20,6 @@ AxisGrid AxisGrid::linear(int n, double lower, double upper) {
 }
 
 AxisGrid AxisGrid::geometric(int n, double lower, double upper, double ratio) {
-
-
     if (ratio == 1.0) {
         return linear(n, lower, upper);
     }
@@ -41,8 +37,7 @@ AxisGrid AxisGrid::geometric(int n, double lower, double upper, double ratio) {
                        (-std::expm1(-static_cast<double>(i) * a)) /
                        (-std::expm1(-static_cast<double>(n) * a));
         } else {
-            fraction =
-                std::expm1(static_cast<double>(i) * a) / std::expm1(static_cast<double>(n) * a);
+            fraction = std::expm1(static_cast<double>(i) * a) / std::expm1(static_cast<double>(n) * a);
         }
 
         faces[i] = lower + (upper - lower) * fraction;
@@ -56,8 +51,7 @@ AxisGrid AxisGrid::geometric(int n, double lower, double upper, double ratio) {
     return AxisGrid(std::move(faces));
 }
 
-AxisGrid AxisGrid::geometric_capped(double lower, double upper, double first_width,
-                                    double max_width, double ratio) {
+AxisGrid AxisGrid::geometric_capped(double lower, double upper, double first_width, double max_width, double ratio) {
     std::vector<double> faces{lower};
     double width = first_width;
     // Clip only the final cell so the physical boundary is exactly upper.
@@ -111,12 +105,6 @@ AxisGrid::AxisGrid(std::vector<double> physical_faces) : n_(0) {
 
         faces_[n_ + NG + g] =
             physical_faces.back() + (physical_faces.back() - physical_faces[n_ - g]);
-    }
-
-    for (int i = -NG; i <= n_ + NG; ++i) {
-        if (!std::isfinite(face(i))) {
-            throw std::invalid_argument("Nonfinite ghost face");
-        }
     }
 
     for (int i = -NG; i < n_ + NG; ++i) {
@@ -196,17 +184,14 @@ SpatialGrid::SpatialGrid(AxisGrid radial, AxisGrid vertical)
 }
 
 double SpatialGrid::volume(int i, int j) const {
-
     return vertical_face_area(i) * vertical_.width(j);
 }
 
 double SpatialGrid::radial_face_area(int i, int j) const {
-
     return 2.0 * std::numbers::pi * radial_.face(i) * vertical_.width(j);
 }
 
 double SpatialGrid::vertical_face_area(int i) const {
-
     const double left = radial_.face(i);
     const double right = radial_.face(i + 1);
 
@@ -233,8 +218,9 @@ RgGrid RgGrid::logarithmic(int n_faces, double lower, double upper) {
     const double log_lower = std::log(lower);
     const double dlog = (std::log(upper) - log_lower) / (n_faces - 1);
     std::vector<double> faces(n_faces), centers(n_faces - 1);
-    for (int k = 0; k < n_faces; ++k)
+    for (int k = 0; k < n_faces; ++k) {
         faces[k] = std::exp(log_lower + k * dlog);
+    }
     faces.front() = lower;
     faces.back() = upper;
     for (int k = 0; k < n_faces - 1; ++k) {

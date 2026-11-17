@@ -25,10 +25,16 @@ int main(int argc, char **argv) {
     // All three winds have cylindrical divergence 3*a, including the axis.
     const double ar = wind == "vertical" ? 0.0 : (wind == "radial" ? 1.5*a : a);
     const double az = wind == "radial" ? 0.0 : (wind == "vertical" ? 3.0*a : a);
-    for (int i = 0; i < vr.nR(); ++i)
-        for (int j = 0; j < vr.nz(); ++j) vr(i,j) = ar * grid.R().face(i);
-    for (int i = 0; i < vz.nR(); ++i)
-        for (int j = 0; j < vz.nz(); ++j) vz(i,j) = az * grid.z().face(j);
+    for (int i = 0; i < vr.nR(); ++i) {
+        for (int j = 0; j < vr.nz(); ++j) {
+            vr(i,j) = ar * grid.R().face(i);
+        }
+    }
+    for (int i = 0; i < vz.nR(); ++i) {
+        for (int j = 0; j < vz.nz(); ++j) {
+            vz(i,j) = az * grid.z().face(j);
+        }
+    }
     const auto integral = [&](double lo, double hi) {
         if (profile == "power") return 1.0/lo - 1.0/hi;
         if (profile == "cutoff") return std::log(hi/lo);
@@ -38,14 +44,17 @@ int main(int argc, char **argv) {
                     - std::erf(std::log(lo/1000.0)/scale));
     };
     Field3D q(grid, Rg);
-    for (int k = 0; k < cells; ++k)
-        for (int i = 0; i < grid.nR(); ++i)
-            for (int j = 0; j < grid.nz(); ++j)
+    for (int k = 0; k < cells; ++k) {
+        for (int i = 0; i < grid.nR(); ++i) {
+            for (int j = 0; j < grid.nz(); ++j) {
                 q(k,i,j) = integral(Rg.face(k), Rg.face(k+1))/Rg.width(k);
+            }
+        }
+    }
     const auto initial = q;
     q(0,-1,-1) = 7.0;
-    const std::vector<double> Dpp(cells + 1, 0.0);
-    cr_momentum::Solver solver(grid, Rg, vr, vz, Dpp, time/steps, boundary, boundary);
+    const cr_diffusion::DiffusionModel model(1e-7, 1.0 / 3.0, 0.0);
+    cr_momentum::Solver solver(grid, Rg, vr, vz, model, time/steps, boundary, boundary);
     const auto outgoing = [&]() {
         if (boundary == cr_momentum::Boundary::ZeroFlux) return 0.0;
         return std::max(a, 0.0)*Rg.face(0)*q(0,0,0)
@@ -61,9 +70,11 @@ int main(int argc, char **argv) {
     for (int k = 0; k < cells; ++k) {
         N0 += initial(k,0,0)*Rg.width(k);
         N += q(k,0,0)*Rg.width(k);
-        for (int i = 0; i < grid.nR(); ++i)
-            for (int j = 0; j < grid.nz(); ++j)
+        for (int i = 0; i < grid.nR(); ++i) {
+            for (int j = 0; j < grid.nz(); ++j) {
                 spatial_error = std::max(spatial_error, std::abs(q(k,i,j)-q(k,0,0)));
+            }
+        }
     }
     std::cout << std::setprecision(17);
     std::cout << "# " << N0 << ' ' << N << ' ' << escaped << ' '

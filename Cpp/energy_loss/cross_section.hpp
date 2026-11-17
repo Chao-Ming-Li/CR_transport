@@ -6,8 +6,21 @@
 #include <stdexcept>
 #include <string_view>
 
-// Nuclear data and reaction coefficients. Cross sections: cm^2; speeds: cm/s;
-// gas number density: cm^-3; returned reaction rates: yr^-1.
+// All physical constants, unit conversions and nuclear data of the project.
+namespace physical_constants {
+
+    // Use the Julian year consistently in transport and nuclear reactions.
+    inline constexpr double seconds_per_year = 31557600.0;
+    inline constexpr double cm_per_kpc = 3.0856775814913673e21;
+    inline constexpr double cm_per_km = 1e5;
+    inline constexpr double km_s_to_kpc_yr = cm_per_km * seconds_per_year / cm_per_kpc;
+    inline constexpr double speed_of_light_cm_s = 3.0e10;
+    inline constexpr double nucleon_rest_energy_GeV = 0.9315;
+
+} // namespace physical_constants
+
+// Nuclear data. Cross sections: cm^2; gas number density: cm^-3;
+// reaction rates built from them: yr^-1.
 namespace cross_section {
 
     enum class Isotope : std::size_t {
@@ -21,14 +34,11 @@ namespace cross_section {
         Be10,
         Be9,
         Be7,
+        Proton, // Transport only: proton reaction cross sections are not supplied.
         Count
     }; // Count is not a nuclide, just a sentinel for array sizes.
 
     inline constexpr std::size_t isotope_count = static_cast<std::size_t>(Isotope::Count);
-    inline constexpr double seconds_per_year = 3.1536e7;
-    inline constexpr double speed_of_light_cm_s = 3.0e10;
-    inline constexpr double nucleon_rest_energy_GeV = 0.9315;
-    inline constexpr double default_helium_enhancement = 1.3;
 
     struct Nuclide {
         std::string_view name;
@@ -46,8 +56,8 @@ namespace cross_section {
          {"B10", 5, 10},
          {"Be10", 4, 10},
          {"Be9", 4, 9},
-         {"Be7", 4,
-          7}}}; // <Nuclide> is type of array element, isotope_count is the number of elements in the array, and the double braces {{...}} are used to initialize the array with a list of Nuclide objects.
+         {"Be7", 4, 7},
+         {"Proton", 1, 1}}};
 
     constexpr std::size_t index(Isotope isotope) {
         const auto i = static_cast<std::size_t>(isotope);
@@ -63,6 +73,7 @@ namespace cross_section {
     // sigma[parent][daughter]. Diagonal: total inelastic destruction.
     // Off-diagonal: partial fragmentation parent -> daughter.
     // Original DRAGON2 values converted from mb to cm^2.
+    // The added proton row/column are zero: no proton reactions are modeled.
     inline constexpr std::array<std::array<double, isotope_count>, isotope_count> sigma{
         {{{293.2e-27, 60.77e-27, 30.07e-27, 21.66e-27, 33.16e-27, 26.83e-27, 10.40e-27, 4.07e-27,
            3.35e-27, 8.70e-27}},

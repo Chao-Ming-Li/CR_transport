@@ -23,8 +23,7 @@ public:
     // Parameters: lower, upper, start width, maximum width, increase ratio.
     // Grow widths by ratio >= 1 from first_width, then hold at max_width.
     // End exactly at upper; the final cell may be shortened.
-    static AxisGrid geometric_capped(double lower, double upper, double first_width,
-                                     double max_width, double ratio);
+    static AxisGrid geometric_capped(double lower, double upper, double first_width, double max_width, double ratio);
 
     // Arbitrary strictly increasing physical faces.
     // Number of cells is physical_faces.size() - 1.
@@ -56,8 +55,7 @@ private:
 // endpoints. There are n_faces-1 cells with geometric-mean centers.
 class RgGrid {
 public:
-    static RgGrid logarithmic(int n_faces = 61, double lower = 1.0,
-                                    double upper = 1e6);
+    static RgGrid logarithmic(int n_faces = 61, double lower = 1.0, double upper = 1e6);
 
     int size() const noexcept { return static_cast<int>(centers_.size()); }
     double center(int k) const;

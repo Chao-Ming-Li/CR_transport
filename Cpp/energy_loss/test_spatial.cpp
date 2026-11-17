@@ -18,13 +18,19 @@ int main() {
     Field2D vr(grid, Field2D::Location::RadialFace);
     Field2D vz(grid, Field2D::Location::VerticalFace);
     // Closed face velocities isolate conservation, with both signs inside.
-    for (int i = 1; i < grid.nR(); ++i)
-        for (int j = 0; j < grid.nz(); ++j) vr(i,j) = 0.1*std::cos(i+j);
-    for (int i = 0; i < grid.nR(); ++i)
-        for (int j = 1; j < grid.nz(); ++j) vz(i,j) = 0.1*std::sin(i-j);
+    for (int i = 1; i < grid.nR(); ++i) {
+        for (int j = 0; j < grid.nz(); ++j) {
+            vr(i,j) = 0.1*std::cos(i+j);
+        }
+    }
+    for (int i = 0; i < grid.nR(); ++i) {
+        for (int j = 1; j < grid.nz(); ++j) {
+            vz(i,j) = 0.1*std::sin(i-j);
+        }
+    }
 
-    for (auto reconstruction : {cr_advection::Reconstruction::Constant, cr_advection::Reconstruction::PLM})
-        for (auto limiter : {cr_advection::Limiter::Minmod, cr_advection::Limiter::VanLeer, cr_advection::Limiter::MC})
+    for (auto reconstruction : {cr_advection::Reconstruction::Constant, cr_advection::Reconstruction::PLM}) {
+        for (auto limiter : {cr_advection::Limiter::Minmod, cr_advection::Limiter::VanLeer, cr_advection::Limiter::MC}) {
             for (auto integrator : {cr_advection::TimeIntegrator::Euler, cr_advection::TimeIntegrator::SSPRK2}) {
                 Field3D q(grid, Rg);
                 std::vector<Field2D> reference;
@@ -32,13 +38,14 @@ int main() {
                 for (int k = 0; k < Rg.size(); ++k) {
                     reference.emplace_back(grid);
                     double mass = 0.0;
-                    for (int i = 0; i < grid.nR(); ++i)
+                    for (int i = 0; i < grid.nR(); ++i) {
                         for (int j = 0; j < grid.nz(); ++j) {
                             const double value = (k+1)*std::exp(-std::pow(grid.radial_centroid(i)-0.3*k, 2)
                                                                -std::pow(grid.z().center(j)-0.2*k, 2));
                             q(k,i,j) = reference[k](i,j) = value;
                             mass += value*grid.volume(i,j);
                         }
+                    }
                     initial_mass.push_back(mass);
                 }
                 cr_advection::Options options;
@@ -57,9 +64,11 @@ int main() {
                         check(std::equal(values.begin(), values.end(), reference[k].data.begin()));
                         if (step == 0) {
                             double mass = 0.0;
-                            for (int i = 0; i < grid.nR(); ++i)
-                                for (int j = 0; j < grid.nz(); ++j)
+                            for (int i = 0; i < grid.nR(); ++i) {
+                                for (int j = 0; j < grid.nz(); ++j) {
                                     mass += q(k,i,j)*grid.volume(i,j);
+                                }
+                            }
                             check(std::abs(mass/initial_mass[k]-1.0) < 1e-13);
                         }
                     }
@@ -79,5 +88,7 @@ int main() {
                 cr_diffusion::Solver(grid, 0.0, 0.001).advance(q);
                 check(std::equal(q.data().begin(), q.data().end(), before.begin()));
             }
+        }
+    }
     std::cout << "Spatial: rigidity-plane equivalence, limiter/integrator combinations, conservation, boundaries and disabled operators passed.\n";
 }
